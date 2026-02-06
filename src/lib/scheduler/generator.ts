@@ -72,9 +72,45 @@ export function generateSchedule(ctx: SchedulerContext): Schedule {
     })
   })
 
-  // Step 2: Assign Night-dedicated nurses first
+  // Step 1.5: Pre-assign off days for dedicated nurses (2 consecutive days)
   const nightDedicated = nurses.filter((n) => n.personalRules.dedicatedRole === 'night')
   const chargeDedicated = nurses.filter((n) => n.personalRules.dedicatedRole === 'charge')
+  const allDedicated = [...nightDedicated, ...chargeDedicated]
+
+  // For dedicated nurses, assign 2-day consecutive off periods
+  allDedicated.forEach((nurse) => {
+    // Calculate how many 2-day off periods needed (roughly every 5-6 days of work)
+    const totalDays = days.length
+    const workDaysTarget = Math.floor(totalDays * 0.7) // ~70% work days
+    const offDaysNeeded = totalDays - workDaysTarget
+    const offPeriods = Math.floor(offDaysNeeded / 2)
+
+    // Spread off periods evenly across the month
+    const interval = Math.floor(totalDays / (offPeriods + 1))
+
+    for (let period = 0; period < offPeriods; period++) {
+      // Find the starting day for this off period
+      let startIdx = interval * (period + 1) - 1
+
+      // Adjust to avoid already assigned vacation days
+      while (startIdx < days.length - 1) {
+        const day1Str = formatDate(days[startIdx])
+        const day2Str = formatDate(days[startIdx + 1])
+
+        const day1Free = !assignments[day1Str].off.includes(nurse.id)
+        const day2Free = !assignments[day2Str].off.includes(nurse.id)
+
+        if (day1Free && day2Free) {
+          assignments[day1Str].off.push(nurse.id)
+          assignments[day2Str].off.push(nurse.id)
+          break
+        }
+        startIdx++
+      }
+    }
+  })
+
+  // Step 2: Assign Night-dedicated nurses first
 
   days.forEach((date) => {
     const dateStr = formatDate(date)
@@ -283,7 +319,20 @@ function getEligibleNurses(
       const scoreA = nurseScores.get(a.id)!
       const scoreB = nurseScores.get(b.id)!
 
-      // Primary: Lower weighted hours first (fairness)
+      // For Charge shifts (non-dedicated): prioritize by charge count first
+      if (shiftType === 'charge') {
+        const aIsDedicated = a.personalRules.dedicatedRole === 'charge'
+        const bIsDedicated = b.personalRules.dedicatedRole === 'charge'
+
+        // Only apply charge count balancing for non-dedicated nurses
+        if (!aIsDedicated && !bIsDedicated) {
+          if (scoreA.chargeCount !== scoreB.chargeCount) {
+            return scoreA.chargeCount - scoreB.chargeCount
+          }
+        }
+      }
+
+      // Primary (or secondary for Charge): Lower weighted hours first (fairness)
       if (scoreA.weightedHours !== scoreB.weightedHours) {
         return scoreA.weightedHours - scoreB.weightedHours
       }
