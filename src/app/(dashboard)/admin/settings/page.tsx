@@ -187,7 +187,7 @@ export default function SettingsPage() {
             />
           </div>
           <div className="space-y-2">
-            <Label>최대 연속 Night 근무일수</Label>
+            <Label>최대 연속 Night/Charge 근무일수</Label>
             <Input
               type="number"
               min={1}
@@ -200,6 +200,7 @@ export default function SettingsPage() {
                 })
               }
             />
+            <p className="text-xs text-gray-500">Night와 Charge 근무에 동일하게 적용</p>
           </div>
         </CardContent>
       </Card>

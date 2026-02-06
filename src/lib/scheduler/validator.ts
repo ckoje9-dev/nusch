@@ -56,14 +56,14 @@ export function validateAssignment(
     }
   }
 
-  // Check max consecutive night days
-  if (shiftType === 'night') {
-    const consecutiveNightDays = getConsecutiveNightDays(nurse.id, dateStr, assignments, allDays)
-    if (consecutiveNightDays >= settings.maxConsecutiveNightDays) {
+  // Check max consecutive night/charge days
+  if (shiftType === 'night' || shiftType === 'charge') {
+    const consecutiveDays = getConsecutiveNightChargeDays(nurse.id, dateStr, assignments, allDays)
+    if (consecutiveDays >= settings.maxConsecutiveNightDays) {
       return {
         valid: false,
         violatedRule: 'maxConsecutiveNightDays',
-        reason: `최대 연속 Night 근무일수(${settings.maxConsecutiveNightDays}일)를 초과합니다.`,
+        reason: `최대 연속 Night/Charge 근무일수(${settings.maxConsecutiveNightDays}일)를 초과합니다.`,
       }
     }
   }
@@ -130,7 +130,7 @@ function getConsecutiveWorkDays(
   return count
 }
 
-function getConsecutiveNightDays(
+function getConsecutiveNightChargeDays(
   nurseId: string,
   dateStr: string,
   assignments: Record<string, DailyAssignment>,
@@ -139,7 +139,7 @@ function getConsecutiveNightDays(
   const currentDate = new Date(dateStr)
   let count = 0
 
-  // Check previous days
+  // Check previous days for Night or Charge shifts
   for (let i = 1; i <= 10; i++) {
     const prevDate = new Date(currentDate)
     prevDate.setDate(prevDate.getDate() - i)
@@ -147,7 +147,11 @@ function getConsecutiveNightDays(
 
     if (!assignments[prevDateStr]) break
 
-    if (assignments[prevDateStr].night?.includes(nurseId)) {
+    const isNightOrCharge =
+      assignments[prevDateStr].night?.includes(nurseId) ||
+      assignments[prevDateStr].charge?.includes(nurseId)
+
+    if (isNightOrCharge) {
       count++
     } else {
       break

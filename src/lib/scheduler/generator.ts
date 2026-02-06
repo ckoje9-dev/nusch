@@ -89,15 +89,25 @@ export function generateSchedule(ctx: SchedulerContext): Schedule {
       }
     })
 
-    // Assign charge-dedicated nurses
-    chargeDedicated.forEach((nurse) => {
-      if (!assignments[dateStr].off.includes(nurse.id)) {
-        if (canAssignShift(nurse, dateStr, 'charge', assignments, settings, days)) {
-          assignments[dateStr].charge.push(nurse.id)
-          updateScore(nurseScores, nurse.id, date, 'charge', settings.chargeSettings.intensityWeight, ctx.holidays)
-        }
-      }
-    })
+    // Assign charge-dedicated nurses (only 1 per day)
+    // Sort by weighted hours to ensure fairness among dedicated nurses
+    const availableChargeDedicated = chargeDedicated
+      .filter((nurse) => {
+        if (assignments[dateStr].off.includes(nurse.id)) return false
+        return canAssignShift(nurse, dateStr, 'charge', assignments, settings, days)
+      })
+      .sort((a, b) => {
+        const scoreA = nurseScores.get(a.id)!.weightedHours
+        const scoreB = nurseScores.get(b.id)!.weightedHours
+        return scoreA - scoreB
+      })
+
+    // Only assign 1 charge per day
+    if (availableChargeDedicated.length > 0 && assignments[dateStr].charge.length < 1) {
+      const nurse = availableChargeDedicated[0]
+      assignments[dateStr].charge.push(nurse.id)
+      updateScore(nurseScores, nurse.id, date, 'charge', settings.chargeSettings.intensityWeight, ctx.holidays)
+    }
   })
 
   // Step 3: Fill remaining shifts
