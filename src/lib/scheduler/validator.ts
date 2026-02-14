@@ -1,4 +1,4 @@
-import { ShiftType, User, Organization, DailyAssignment, SHIFT_TIMES } from '@/types'
+import { ShiftType, User, Organization, DailyAssignment } from '@/types'
 import { formatDate } from '@/lib/utils'
 
 export interface ValidationResult {
@@ -161,13 +161,26 @@ function getConsecutiveNightChargeDays(
   return count
 }
 
+// Forbidden shift transitions (previous day → next day)
+// These patterns don't allow at least 2 time slots of rest
+const FORBIDDEN_TRANSITIONS: Record<string, string[]> = {
+  // N(22:30-07:30) → D(07:00): 연속 근무 (휴식 없음)
+  // N(22:30-07:30) → E(15:00): 1타임 휴식
+  // N(22:30-07:30) → C(10:00): 휴식 2.5시간
+  night: ['day', 'evening', 'charge'],
+  // E(15:00-23:00) → D(07:00): 1타임 휴식
+  evening: ['day'],
+  // C(10:00-18:30) → N(22:30): 금지 패턴
+  charge: ['night'],
+}
+
 function checkMinRestHours(
   nurseId: string,
   dateStr: string,
   shiftType: ShiftType,
   assignments: Record<string, DailyAssignment>,
-  settings: Organization['settings'],
-  allDays: Date[]
+  _settings: Organization['settings'],
+  _allDays: Date[]
 ): ValidationResult {
   const currentDate = new Date(dateStr)
   const prevDate = new Date(currentDate)
@@ -184,30 +197,13 @@ function checkMinRestHours(
     return { valid: true }
   }
 
-  // Calculate rest hours
-  const prevEndTime = parseTime(SHIFT_TIMES[prevShiftType].end)
-  const currentStartTime = parseTime(SHIFT_TIMES[shiftType].start)
-
-  let restHours: number
-  if (prevShiftType === 'night') {
-    // Night shift ends next morning, so calculate differently
-    restHours = currentStartTime - 7.5 + 24 - prevEndTime
-    if (restHours < 0) restHours += 24
-  } else if (currentStartTime >= prevEndTime) {
-    restHours = currentStartTime - prevEndTime
-  } else {
-    // Next day
-    restHours = 24 - prevEndTime + currentStartTime
-  }
-
-  // For charge, apply both day and evening rules
-  const effectiveMinRest = settings.minRestHours
-
-  if (restHours < effectiveMinRest) {
+  // Check forbidden transition patterns
+  const forbidden = FORBIDDEN_TRANSITIONS[prevShiftType]
+  if (forbidden && forbidden.includes(shiftType)) {
     return {
       valid: false,
-      violatedRule: 'minRestHours',
-      reason: `최소 휴식시간(${effectiveMinRest}시간)을 충족하지 않습니다. (휴식: ${restHours.toFixed(1)}시간)`,
+      violatedRule: 'forbiddenTransition',
+      reason: `금지된 근무 전환입니다: ${prevShiftType.toUpperCase()} → ${shiftType.toUpperCase()} (최소 2타임 휴식 필요)`,
     }
   }
 
@@ -283,12 +279,6 @@ function findShiftType(
     }
   }
   return null
-}
-
-function parseTime(timeStr: string): number {
-  if (!timeStr) return 0
-  const [hours, minutes] = timeStr.split(':').map(Number)
-  return hours + minutes / 60
 }
 
 // Validate swap request
