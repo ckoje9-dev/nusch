@@ -182,7 +182,7 @@ export function generateSchedule(ctx: SchedulerContext): Schedule {
 
       // Check if we couldn't fill all slots
       if (assignments[dateStr][shiftType].length < requiredCount) {
-        // Try to assign with relaxed rules (record violations)
+        // Try to assign with relaxed rules, but NEVER violate forbidden transitions
         const remainingNurses = getAvailableNurses(
           nurses,
           dateStr,
@@ -194,6 +194,11 @@ export function generateSchedule(ctx: SchedulerContext): Schedule {
         for (let i = 0; i < stillNeeded && i < remainingNurses.length; i++) {
           const nurse = remainingNurses[i]
           const validation = validateAssignment(nurse, dateStr, shiftType, assignments, settings, days)
+
+          // Never break forbidden transition rules (N→D, E→D, N→E, N→C, C→N)
+          if (!validation.valid && validation.violatedRule === 'forbiddenTransition') {
+            continue
+          }
 
           if (!validation.valid) {
             violations.push({
@@ -332,7 +337,17 @@ function getEligibleNurses(
         }
       }
 
-      // Primary (or secondary for Charge): Lower weighted hours first (fairness)
+      // Continuity bonus: prefer nurses who worked yesterday (minimize 퐁당퐁당 pattern)
+      // Nurses who worked yesterday should keep working, nurses who were off should stay off
+      const aWorkedYesterday = wasWorkingPreviousDay(a.id, dateStr, assignments)
+      const bWorkedYesterday = wasWorkingPreviousDay(b.id, dateStr, assignments)
+
+      if (aWorkedYesterday !== bWorkedYesterday) {
+        // Nurse who worked yesterday gets priority (sort first)
+        return aWorkedYesterday ? -1 : 1
+      }
+
+      // Primary: Lower weighted hours first (fairness)
       if (scoreA.weightedHours !== scoreB.weightedHours) {
         return scoreA.weightedHours - scoreB.weightedHours
       }
@@ -346,6 +361,23 @@ function getEligibleNurses(
 
       return diffA - diffB
     })
+}
+
+function wasWorkingPreviousDay(
+  nurseId: string,
+  dateStr: string,
+  assignments: Record<string, DailyAssignment>
+): boolean {
+  const currentDate = new Date(dateStr)
+  const prevDate = new Date(currentDate)
+  prevDate.setDate(prevDate.getDate() - 1)
+  const prevDateStr = formatDate(prevDate)
+
+  if (!assignments[prevDateStr]) return false
+
+  return ['day', 'evening', 'night', 'charge'].some(
+    (type) => assignments[prevDateStr][type as ShiftType]?.includes(nurseId)
+  )
 }
 
 function getAvailableNurses(
