@@ -60,6 +60,7 @@ export default function SchedulePage() {
     const now = new Date()
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
   })
+  const [filterNurseId, setFilterNurseId] = useState<string>('all')
 
   const loadData = async () => {
     if (!userData?.organizationId) return
@@ -291,6 +292,22 @@ export default function SchedulePage() {
           <TabsContent value="calendar">
             <Card>
               <CardContent className="p-2 sm:p-4">
+                {/* Filter dropdown */}
+                <div className="flex justify-end mb-3">
+                  <select
+                    value={filterNurseId}
+                    onChange={(e) => setFilterNurseId(e.target.value)}
+                    className="text-sm border border-gray-300 rounded-md px-3 py-1.5 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  >
+                    <option value="all">전체 보기</option>
+                    {staff.map((nurse) => (
+                      <option key={nurse.id} value={nurse.id}>
+                        {nurse.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
                 {/* Day of week headers */}
                 <div className="grid grid-cols-7 border-b">
                   {['일', '월', '화', '수', '목', '금', '토'].map((dayName, i) => (
@@ -309,24 +326,33 @@ export default function SchedulePage() {
                 {/* Calendar grid */}
                 <div className="grid grid-cols-7">
                   {(() => {
-                    // Calculate leading empty cells (days before the 1st)
-                    const firstDayOfWeek = new Date(year, month - 1, 1).getDay() // 0=Sun
+                    const firstDayOfWeek = new Date(year, month - 1, 1).getDay()
                     const cells: React.ReactNode[] = []
 
-                    // Empty cells before month starts
                     for (let i = 0; i < firstDayOfWeek; i++) {
                       cells.push(
                         <div key={`empty-${i}`} className="min-h-[120px] border-b border-r bg-gray-50/50" />
                       )
                     }
 
-                    // Day cells
                     days.forEach((d) => {
                       const assignment = schedule.assignments[d.dateStr]
                       const dayViolations = schedule.violations.filter((v) => v.date === d.dateStr)
                       const dayOfWeek = d.date.getDay()
                       const isSunday = dayOfWeek === 0
                       const isSaturday = dayOfWeek === 6
+
+                      // When filtering by nurse, find their shift for this day
+                      const isFiltering = filterNurseId !== 'all'
+                      let filteredNurseShift: ShiftType | null = null
+                      if (isFiltering && assignment) {
+                        for (const type of ['charge', 'day', 'evening', 'night', 'off'] as ShiftType[]) {
+                          if (assignment[type]?.includes(filterNurseId)) {
+                            filteredNurseShift = type
+                            break
+                          }
+                        }
+                      }
 
                       cells.push(
                         <div
@@ -368,9 +394,9 @@ export default function SchedulePage() {
                           </div>
 
                           {/* Shift assignments */}
-                          {assignment && (
+                          {assignment && !isFiltering && (
                             <div className="space-y-0.5">
-                              {(['day', 'evening', 'night', 'charge'] as ShiftType[]).map((type) => {
+                              {(['charge', 'day', 'evening', 'night'] as ShiftType[]).map((type) => {
                                 const nurseIds = assignment[type]
                                 if (!nurseIds || nurseIds.length === 0) return null
 
@@ -390,11 +416,24 @@ export default function SchedulePage() {
                               })}
                             </div>
                           )}
+
+                          {/* Filtered nurse view */}
+                          {assignment && isFiltering && filteredNurseShift && (
+                            <div className="flex items-center justify-center h-[80px]">
+                              <span
+                                className={cn(
+                                  'inline-flex items-center justify-center w-10 h-10 text-base font-bold rounded-lg',
+                                  SHIFT_COLORS[filteredNurseShift]
+                                )}
+                              >
+                                {SHIFT_SHORT[filteredNurseShift]}
+                              </span>
+                            </div>
+                          )}
                         </div>
                       )
                     })
 
-                    // Trailing empty cells to complete the last week
                     const totalCells = firstDayOfWeek + daysInMonth
                     const remainingCells = totalCells % 7 === 0 ? 0 : 7 - (totalCells % 7)
                     for (let i = 0; i < remainingCells; i++) {
@@ -409,7 +448,7 @@ export default function SchedulePage() {
 
                 {/* Legend */}
                 <div className="flex flex-wrap gap-3 mt-3 px-1">
-                  {(['day', 'evening', 'night', 'charge'] as ShiftType[]).map((type) => (
+                  {(['charge', 'day', 'evening', 'night'] as ShiftType[]).map((type) => (
                     <div key={type} className="flex items-center gap-1">
                       <span className={cn('inline-block w-3 h-3 rounded', SHIFT_COLORS[type])} />
                       <span className="text-xs text-gray-600">
