@@ -28,17 +28,15 @@ interface NurseScore {
   yearsOfExperience: number
 }
 
-const MIN_FAIRNESS = 85
-const MAX_ATTEMPTS = 20
+const GENERATION_COUNT = 20
 
 export function generateSchedule(ctx: SchedulerContext): Schedule {
   let bestSchedule: Schedule | null = null
   let bestFairness = -1
 
-  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+  for (let i = 0; i < GENERATION_COUNT; i++) {
     const candidate = generateScheduleOnce(ctx)
 
-    // Calculate fairness only for non-dedicated nurses
     const nonDedicatedStats = Object.fromEntries(
       Object.entries(candidate.statistics).filter(([, s]) => s.fairnessScore !== -1)
     )
@@ -47,11 +45,6 @@ export function generateSchedule(ctx: SchedulerContext): Schedule {
     if (fairness.fairnessIndex > bestFairness) {
       bestFairness = fairness.fairnessIndex
       bestSchedule = candidate
-    }
-
-    // Stop early if we meet the threshold
-    if (fairness.fairnessIndex >= MIN_FAIRNESS) {
-      break
     }
   }
 
