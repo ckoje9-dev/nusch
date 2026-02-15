@@ -287,85 +287,137 @@ export default function SchedulePage() {
             <TabsTrigger value="stats">통계</TabsTrigger>
           </TabsList>
 
-          {/* Calendar View */}
+          {/* Calendar View - Google Calendar Style */}
           <TabsContent value="calendar">
             <Card>
-              <CardContent className="p-2 sm:p-4 overflow-x-auto">
-                <table className="w-full min-w-[600px]">
-                  <thead>
-                    <tr>
-                      <th className="p-2 text-left font-medium text-gray-500 w-24">
-                        이름
-                      </th>
-                      {days.map((d) => (
-                        <th
+              <CardContent className="p-2 sm:p-4">
+                {/* Day of week headers */}
+                <div className="grid grid-cols-7 border-b">
+                  {['일', '월', '화', '수', '목', '금', '토'].map((dayName, i) => (
+                    <div
+                      key={dayName}
+                      className={cn(
+                        'py-2 text-center text-sm font-medium',
+                        i === 0 ? 'text-red-500' : i === 6 ? 'text-blue-500' : 'text-gray-500'
+                      )}
+                    >
+                      {dayName}
+                    </div>
+                  ))}
+                </div>
+
+                {/* Calendar grid */}
+                <div className="grid grid-cols-7">
+                  {(() => {
+                    // Calculate leading empty cells (days before the 1st)
+                    const firstDayOfWeek = new Date(year, month - 1, 1).getDay() // 0=Sun
+                    const cells: React.ReactNode[] = []
+
+                    // Empty cells before month starts
+                    for (let i = 0; i < firstDayOfWeek; i++) {
+                      cells.push(
+                        <div key={`empty-${i}`} className="min-h-[120px] border-b border-r bg-gray-50/50" />
+                      )
+                    }
+
+                    // Day cells
+                    days.forEach((d) => {
+                      const assignment = schedule.assignments[d.dateStr]
+                      const dayViolations = schedule.violations.filter((v) => v.date === d.dateStr)
+                      const dayOfWeek = d.date.getDay()
+                      const isSunday = dayOfWeek === 0
+                      const isSaturday = dayOfWeek === 6
+
+                      cells.push(
+                        <div
                           key={d.dateStr}
                           className={cn(
-                            'p-1 text-center text-xs',
-                            d.isWeekend ? 'text-red-500' : 'text-gray-500'
+                            'min-h-[120px] border-b border-r p-1 relative',
+                            d.isWeekend ? 'bg-gray-50/80' : 'bg-white'
                           )}
                         >
-                          <div>{d.day}</div>
-                          <div>{d.dayName}</div>
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {staff.map((nurse) => (
-                      <tr key={nurse.id} className="border-t">
-                        <td className="p-2 font-medium text-sm whitespace-nowrap">
-                          {nurse.name}
-                        </td>
-                        {days.map((d) => {
-                          const assignment = schedule.assignments[d.dateStr]
-                          let shiftType: ShiftType = 'off'
-
-                          for (const type of ['day', 'evening', 'night', 'charge', 'off'] as ShiftType[]) {
-                            if (assignment?.[type]?.includes(nurse.id)) {
-                              shiftType = type
-                              break
-                            }
-                          }
-
-                          // Check if this cell has violations
-                          const cellViolations = schedule.violations.filter(
-                            (v) => v.userId === nurse.id && v.date === d.dateStr
-                          )
-
-                          return (
-                            <td key={d.dateStr} className="p-1 text-center">
-                              <div className="relative inline-flex group">
-                                <span
-                                  className={cn(
-                                    'inline-flex items-center justify-center w-6 h-6 text-xs font-semibold rounded',
-                                    SHIFT_COLORS[shiftType],
-                                    cellViolations.length > 0 && 'ring-2 ring-yellow-400'
-                                  )}
-                                >
-                                  {SHIFT_SHORT[shiftType]}
-                                </span>
-                                {cellViolations.length > 0 && (
-                                  <>
-                                    <AlertTriangle className="absolute -top-1.5 -right-1.5 h-3 w-3 text-yellow-500" />
-                                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block z-50">
-                                      <div className="bg-gray-900 text-white text-xs rounded px-2 py-1.5 whitespace-nowrap shadow-lg">
-                                        {cellViolations.map((v, i) => (
-                                          <div key={i}>{v.reason}</div>
-                                        ))}
-                                      </div>
-                                      <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-gray-900" />
-                                    </div>
-                                  </>
-                                )}
+                          {/* Date number */}
+                          <div className="flex items-center justify-between mb-1">
+                            <span
+                              className={cn(
+                                'text-sm font-medium w-6 h-6 flex items-center justify-center rounded-full',
+                                isSunday && 'text-red-500',
+                                isSaturday && 'text-blue-500',
+                                !isSunday && !isSaturday && 'text-gray-700'
+                              )}
+                            >
+                              {d.day}
+                            </span>
+                            {dayViolations.length > 0 && (
+                              <div className="relative group">
+                                <AlertTriangle className="h-3.5 w-3.5 text-yellow-500 cursor-pointer" />
+                                <div className="absolute right-0 top-full mt-1 hidden group-hover:block z-50">
+                                  <div className="bg-gray-900 text-white text-xs rounded px-2 py-1.5 whitespace-nowrap shadow-lg max-w-[250px]">
+                                    {dayViolations.map((v, i) => {
+                                      const nurse = staff.find((s) => s.id === v.userId)
+                                      return (
+                                        <div key={i} className="py-0.5">
+                                          <span className="font-medium">{nurse?.name}</span>: {v.reason}
+                                        </div>
+                                      )
+                                    })}
+                                  </div>
+                                </div>
                               </div>
-                            </td>
-                          )
-                        })}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                            )}
+                          </div>
+
+                          {/* Shift assignments */}
+                          {assignment && (
+                            <div className="space-y-0.5">
+                              {(['day', 'evening', 'night', 'charge'] as ShiftType[]).map((type) => {
+                                const nurseIds = assignment[type]
+                                if (!nurseIds || nurseIds.length === 0) return null
+
+                                return (
+                                  <div
+                                    key={type}
+                                    className={cn(
+                                      'text-[10px] leading-tight rounded px-1 py-0.5 truncate',
+                                      SHIFT_COLORS[type]
+                                    )}
+                                    title={nurseIds.map((id) => staff.find((s) => s.id === id)?.name).join(', ')}
+                                  >
+                                    <span className="font-bold mr-0.5">{SHIFT_SHORT[type]}</span>
+                                    {nurseIds.map((id) => staff.find((s) => s.id === id)?.name).join(', ')}
+                                  </div>
+                                )
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })
+
+                    // Trailing empty cells to complete the last week
+                    const totalCells = firstDayOfWeek + daysInMonth
+                    const remainingCells = totalCells % 7 === 0 ? 0 : 7 - (totalCells % 7)
+                    for (let i = 0; i < remainingCells; i++) {
+                      cells.push(
+                        <div key={`trail-${i}`} className="min-h-[120px] border-b border-r bg-gray-50/50" />
+                      )
+                    }
+
+                    return cells
+                  })()}
+                </div>
+
+                {/* Legend */}
+                <div className="flex flex-wrap gap-3 mt-3 px-1">
+                  {(['day', 'evening', 'night', 'charge'] as ShiftType[]).map((type) => (
+                    <div key={type} className="flex items-center gap-1">
+                      <span className={cn('inline-block w-3 h-3 rounded', SHIFT_COLORS[type])} />
+                      <span className="text-xs text-gray-600">
+                        {SHIFT_SHORT[type]} - {type === 'day' ? 'Day' : type === 'evening' ? 'Evening' : type === 'night' ? 'Night' : 'Charge'}
+                      </span>
+                    </div>
+                  ))}
+                </div>
               </CardContent>
             </Card>
           </TabsContent>
