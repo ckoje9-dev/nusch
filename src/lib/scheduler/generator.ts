@@ -227,15 +227,25 @@ export function generateSchedule(ctx: SchedulerContext): Schedule {
   })
 
   // Step 4: Calculate final statistics
+  // Exclude dedicated nurses from fairness calculation
+  const nonDedicatedScores: Map<string, NurseScore> = new Map()
+  nurseScores.forEach((score, id) => {
+    const nurse = nurses.find((n) => n.id === id)
+    if (nurse && !nurse.personalRules.dedicatedRole) {
+      nonDedicatedScores.set(id, score)
+    }
+  })
+
   const statistics: Record<string, UserStatistics> = {}
   nurses.forEach((nurse) => {
     const score = nurseScores.get(nurse.id)!
     const totalHours = calculateTotalHours(nurse.id, assignments, days)
+    const isDedicated = !!nurse.personalRules.dedicatedRole
     statistics[nurse.id] = {
       totalHours,
       weightedHours: score.weightedHours,
       chargeCount: score.chargeCount,
-      fairnessScore: calculateFairnessScore(score.weightedHours, nurseScores),
+      fairnessScore: isDedicated ? -1 : calculateFairnessScore(score.weightedHours, nonDedicatedScores),
     }
   })
 

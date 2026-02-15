@@ -49,7 +49,6 @@ export interface OrganizationSettings {
   maxConsecutiveWorkDays: number;
   maxConsecutiveNightDays: number;
   monthlyOffDays: number;
-  minRestHours: number;
   chargeSettings: {
     intensityWeight: number; // 1.0 ~ 1.5
     minYearsRequired: number;

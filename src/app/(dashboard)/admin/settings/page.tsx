@@ -23,7 +23,6 @@ export default function SettingsPage() {
     maxConsecutiveWorkDays: 5,
     maxConsecutiveNightDays: 3,
     monthlyOffDays: 8,
-    minRestHours: 8,
     chargeSettings: {
       intensityWeight: 1.2,
       minYearsRequired: 3,
@@ -226,22 +225,6 @@ export default function SettingsPage() {
                 })
               }
             />
-          </div>
-          <div className="space-y-2">
-            <Label>근무 종료 후 최소 휴식시간 (시간)</Label>
-            <Input
-              type="number"
-              min={2}
-              max={24}
-              value={settings.minRestHours}
-              onChange={(e) =>
-                setSettings({
-                  ...settings,
-                  minRestHours: parseInt(e.target.value) || 8,
-                })
-              }
-            />
-            <p className="text-xs text-gray-500">최소 2시간 이상</p>
           </div>
         </CardContent>
       </Card>

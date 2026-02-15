@@ -68,8 +68,8 @@ export function validateAssignment(
     }
   }
 
-  // Check minimum rest hours
-  const restValidation = checkMinRestHours(nurse.id, dateStr, shiftType, assignments, settings, allDays)
+  // Check forbidden shift transitions
+  const restValidation = checkForbiddenTransition(nurse.id, dateStr, shiftType, assignments)
   if (!restValidation.valid) {
     return restValidation
   }
@@ -174,13 +174,11 @@ const FORBIDDEN_TRANSITIONS: Record<string, string[]> = {
   charge: ['night'],
 }
 
-function checkMinRestHours(
+function checkForbiddenTransition(
   nurseId: string,
   dateStr: string,
   shiftType: ShiftType,
-  assignments: Record<string, DailyAssignment>,
-  _settings: Organization['settings'],
-  _allDays: Date[]
+  assignments: Record<string, DailyAssignment>
 ): ValidationResult {
   const currentDate = new Date(dateStr)
   const prevDate = new Date(currentDate)

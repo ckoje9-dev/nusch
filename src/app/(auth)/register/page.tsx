@@ -20,7 +20,6 @@ const DEFAULT_SETTINGS: OrganizationSettings = {
   maxConsecutiveWorkDays: 5,
   maxConsecutiveNightDays: 3,
   monthlyOffDays: 8,
-  minRestHours: 8,
   chargeSettings: {
     intensityWeight: 1.2,
     minYearsRequired: 3,

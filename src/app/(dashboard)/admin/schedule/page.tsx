@@ -113,8 +113,16 @@ export default function SchedulePage() {
           assignments: newSchedule.assignments,
           statistics: newSchedule.statistics,
           violations: newSchedule.violations,
+          status: 'draft',
         })
-        setSchedule({ ...schedule, ...newSchedule })
+        setSchedule({
+          ...schedule,
+          assignments: newSchedule.assignments,
+          statistics: newSchedule.statistics,
+          violations: newSchedule.violations,
+          status: 'draft',
+          updatedAt: new Date(),
+        })
       } else {
         const id = await createSchedule(newSchedule)
         setSchedule({ ...newSchedule, id })
@@ -198,12 +206,19 @@ export default function SchedulePage() {
     }
   })
 
-  const fairness = schedule?.statistics
-    ? calculateOverallFairness(schedule.statistics)
+  // Exclude dedicated nurses (fairnessScore === -1) from fairness calculations
+  const nonDedicatedStats = schedule?.statistics
+    ? Object.fromEntries(
+        Object.entries(schedule.statistics).filter(([, s]) => s.fairnessScore !== -1)
+      )
     : null
 
-  const ranking = schedule?.statistics
-    ? rankByFairness(schedule.statistics)
+  const fairness = nonDedicatedStats
+    ? calculateOverallFairness(nonDedicatedStats)
+    : null
+
+  const ranking = nonDedicatedStats
+    ? rankByFairness(nonDedicatedStats as Record<string, { weightedHours: number; fairnessScore: number }>)
     : []
 
   return (
@@ -326,16 +341,37 @@ export default function SchedulePage() {
                             }
                           }
 
+                          // Check if this cell has violations
+                          const cellViolations = schedule.violations.filter(
+                            (v) => v.userId === nurse.id && v.date === d.dateStr
+                          )
+
                           return (
                             <td key={d.dateStr} className="p-1 text-center">
-                              <span
-                                className={cn(
-                                  'inline-flex items-center justify-center w-6 h-6 text-xs font-semibold rounded',
-                                  SHIFT_COLORS[shiftType]
+                              <div className="relative inline-flex group">
+                                <span
+                                  className={cn(
+                                    'inline-flex items-center justify-center w-6 h-6 text-xs font-semibold rounded',
+                                    SHIFT_COLORS[shiftType],
+                                    cellViolations.length > 0 && 'ring-2 ring-yellow-400'
+                                  )}
+                                >
+                                  {SHIFT_SHORT[shiftType]}
+                                </span>
+                                {cellViolations.length > 0 && (
+                                  <>
+                                    <AlertTriangle className="absolute -top-1.5 -right-1.5 h-3 w-3 text-yellow-500" />
+                                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block z-50">
+                                      <div className="bg-gray-900 text-white text-xs rounded px-2 py-1.5 whitespace-nowrap shadow-lg">
+                                        {cellViolations.map((v, i) => (
+                                          <div key={i}>{v.reason}</div>
+                                        ))}
+                                      </div>
+                                      <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-gray-900" />
+                                    </div>
+                                  </>
                                 )}
-                              >
-                                {SHIFT_SHORT[shiftType]}
-                              </span>
+                              </div>
                             </td>
                           )
                         })}
@@ -471,6 +507,7 @@ export default function SchedulePage() {
                         </tr>
                       </thead>
                       <tbody>
+                        {/* Non-dedicated nurses (ranked by fairness) */}
                         {ranking.map((r) => {
                           const nurse = staff.find((s) => s.id === r.userId)
                           const stats = schedule.statistics[r.userId]
@@ -497,6 +534,30 @@ export default function SchedulePage() {
                             </tr>
                           )
                         })}
+                        {/* Dedicated nurses (excluded from fairness) */}
+                        {staff
+                          .filter((n) => n.personalRules.dedicatedRole)
+                          .map((nurse) => {
+                            const stats = schedule.statistics[nurse.id]
+                            if (!stats) return null
+                            const roleLabel = nurse.personalRules.dedicatedRole === 'night' ? 'Night 전담' : 'Charge 전담'
+                            return (
+                              <tr key={nurse.id} className="border-b bg-gray-50">
+                                <td className="p-2">
+                                  {nurse.name}
+                                  <span className="ml-1 text-xs text-gray-400">({roleLabel})</span>
+                                </td>
+                                <td className="text-right p-2">{stats.totalHours || 0}h</td>
+                                <td className="text-right p-2">{stats.weightedHours.toFixed(1)}</td>
+                                <td className="text-right p-2">{stats.chargeCount || 0}회</td>
+                                <td className="text-right p-2">
+                                  <span className="px-2 py-1 rounded text-sm bg-gray-100 text-gray-500">
+                                    제외
+                                  </span>
+                                </td>
+                              </tr>
+                            )
+                          })}
                       </tbody>
                     </table>
                   </div>
