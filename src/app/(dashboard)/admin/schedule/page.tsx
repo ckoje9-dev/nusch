@@ -61,6 +61,7 @@ export default function SchedulePage() {
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
   })
   const [filterNurseId, setFilterNurseId] = useState<string>('all')
+  const [showMonthPicker, setShowMonthPicker] = useState(false)
 
   const loadData = async () => {
     if (!userData?.organizationId) return
@@ -239,19 +240,52 @@ export default function SchedulePage() {
           <Button variant="ghost" size="icon" onClick={prevMonth}>
             <ChevronLeft className="h-5 w-5" />
           </Button>
-          <div className="text-center">
-            <p className="text-xl font-bold">{year}년 {month}월</p>
-            {schedule && (
-              <span
-                className={cn(
-                  'text-xs px-2 py-1 rounded',
-                  schedule.status === 'published'
-                    ? 'bg-green-100 text-green-700'
-                    : 'bg-yellow-100 text-yellow-700'
-                )}
-              >
-                {schedule.status === 'published' ? '발행됨' : '초안'}
-              </span>
+          <div className="text-center relative">
+            <button
+              onClick={() => setShowMonthPicker(!showMonthPicker)}
+              className="text-xl font-bold hover:text-blue-600 transition-colors cursor-pointer"
+            >
+              {year}년 {month}월
+            </button>
+            {showMonthPicker && (
+              <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 bg-white border rounded-lg shadow-lg z-50 p-3 w-[280px]">
+                {/* Year navigation */}
+                <div className="flex items-center justify-between mb-2">
+                  <button
+                    onClick={() => setCurrentMonth(`${year - 1}-${String(month).padStart(2, '0')}`)}
+                    className="p-1 hover:bg-gray-100 rounded"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </button>
+                  <span className="font-semibold">{year}년</span>
+                  <button
+                    onClick={() => setCurrentMonth(`${year + 1}-${String(month).padStart(2, '0')}`)}
+                    className="p-1 hover:bg-gray-100 rounded"
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </button>
+                </div>
+                {/* Month grid */}
+                <div className="grid grid-cols-4 gap-1">
+                  {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
+                    <button
+                      key={m}
+                      onClick={() => {
+                        setCurrentMonth(`${year}-${String(m).padStart(2, '0')}`)
+                        setShowMonthPicker(false)
+                      }}
+                      className={cn(
+                        'py-2 text-sm rounded hover:bg-blue-50 transition-colors',
+                        m === month
+                          ? 'bg-blue-600 text-white hover:bg-blue-700'
+                          : 'text-gray-700'
+                      )}
+                    >
+                      {m}월
+                    </button>
+                  ))}
+                </div>
+              </div>
             )}
           </div>
           <Button variant="ghost" size="icon" onClick={nextMonth}>
@@ -282,9 +316,8 @@ export default function SchedulePage() {
         </Card>
       ) : (
         <Tabs defaultValue="calendar">
-          <TabsList className="grid w-full grid-cols-3">
+          <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="calendar">캘린더</TabsTrigger>
-            <TabsTrigger value="list">목록</TabsTrigger>
             <TabsTrigger value="stats">통계</TabsTrigger>
           </TabsList>
 
@@ -459,62 +492,6 @@ export default function SchedulePage() {
                 </div>
               </CardContent>
             </Card>
-          </TabsContent>
-
-          {/* List View */}
-          <TabsContent value="list">
-            <div className="space-y-4">
-              {days.map((d) => {
-                const assignment = schedule.assignments[d.dateStr]
-                if (!assignment) return null
-
-                return (
-                  <Card key={d.dateStr}>
-                    <CardHeader className="py-3">
-                      <CardTitle
-                        className={cn(
-                          'text-lg',
-                          d.isWeekend && 'text-red-600'
-                        )}
-                      >
-                        {d.day}일 ({d.dayName})
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent className="py-2">
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                        {(['day', 'evening', 'night', 'charge'] as ShiftType[]).map(
-                          (type) => (
-                            <div key={type}>
-                              <p
-                                className={cn(
-                                  'text-xs font-semibold mb-1 px-2 py-1 rounded inline-block',
-                                  SHIFT_COLORS[type]
-                                )}
-                              >
-                                {type.toUpperCase()}
-                              </p>
-                              <div className="space-y-1">
-                                {assignment[type]?.map((id) => {
-                                  const nurse = staff.find((s) => s.id === id)
-                                  return nurse ? (
-                                    <p key={id} className="text-sm">
-                                      {nurse.name}
-                                    </p>
-                                  ) : null
-                                })}
-                                {(!assignment[type] || assignment[type].length === 0) && (
-                                  <p className="text-sm text-gray-400">-</p>
-                                )}
-                              </div>
-                            </div>
-                          )
-                        )}
-                      </div>
-                    </CardContent>
-                  </Card>
-                )
-              })}
-            </div>
           </TabsContent>
 
           {/* Statistics View */}
