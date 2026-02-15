@@ -12,7 +12,7 @@ import {
 import { isWeekend, getDaysInMonth, formatDate } from '@/lib/utils'
 import { isHoliday } from './holidays'
 import { validateAssignment, ValidationResult } from './validator'
-import { calculateFairnessScore } from './fairness'
+import { calculateFairnessScore, calculateOverallFairness } from './fairness'
 
 interface SchedulerContext {
   organization: Organization
@@ -28,7 +28,37 @@ interface NurseScore {
   yearsOfExperience: number
 }
 
+const MIN_FAIRNESS = 85
+const MAX_ATTEMPTS = 20
+
 export function generateSchedule(ctx: SchedulerContext): Schedule {
+  let bestSchedule: Schedule | null = null
+  let bestFairness = -1
+
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+    const candidate = generateScheduleOnce(ctx)
+
+    // Calculate fairness only for non-dedicated nurses
+    const nonDedicatedStats = Object.fromEntries(
+      Object.entries(candidate.statistics).filter(([, s]) => s.fairnessScore !== -1)
+    )
+    const fairness = calculateOverallFairness(nonDedicatedStats)
+
+    if (fairness.fairnessIndex > bestFairness) {
+      bestFairness = fairness.fairnessIndex
+      bestSchedule = candidate
+    }
+
+    // Stop early if we meet the threshold
+    if (fairness.fairnessIndex >= MIN_FAIRNESS) {
+      break
+    }
+  }
+
+  return bestSchedule!
+}
+
+function generateScheduleOnce(ctx: SchedulerContext): Schedule {
   const { organization, users, yearMonth } = ctx
   const [year, month] = yearMonth.split('-').map(Number)
   const days = getDaysInMonth(year, month - 1)
