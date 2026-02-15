@@ -50,9 +50,6 @@ export function generateSchedule(ctx: SchedulerContext): Schedule {
     })
   })
 
-  // Calculate median years of experience
-  const medianYears = calculateMedianYears(nurses)
-
   // Step 1: Pre-assign dedicated roles and vacations
   days.forEach((date) => {
     const dateStr = formatDate(date)
@@ -168,8 +165,7 @@ export function generateSchedule(ctx: SchedulerContext): Schedule {
         assignments,
         settings,
         days,
-        nurseScores,
-        medianYears
+        nurseScores
       )
 
       // Assign nurses
@@ -299,8 +295,7 @@ function getEligibleNurses(
   assignments: Record<string, DailyAssignment>,
   settings: Organization['settings'],
   allDays: Date[],
-  nurseScores: Map<string, NurseScore>,
-  medianYears: number
+  nurseScores: Map<string, NurseScore>
 ): User[] {
   return nurses
     .filter((nurse) => {
@@ -358,18 +353,13 @@ function getEligibleNurses(
       }
 
       // Primary: Lower weighted hours first (fairness)
-      if (scoreA.weightedHours !== scoreB.weightedHours) {
-        return scoreA.weightedHours - scoreB.weightedHours
+      // When hours are close (within 2), add randomness for schedule variety
+      const hoursDiff = scoreA.weightedHours - scoreB.weightedHours
+      if (Math.abs(hoursDiff) > 2) {
+        return hoursDiff
       }
 
-      // Secondary: Balance years of experience towards median
-      const currentAssigned = getCurrentDayAssigned(dateStr, shiftType, assignments, nurses)
-      const avgYearsWithA = calculateAvgYears([...currentAssigned, a])
-      const avgYearsWithB = calculateAvgYears([...currentAssigned, b])
-      const diffA = Math.abs(avgYearsWithA - medianYears)
-      const diffB = Math.abs(avgYearsWithB - medianYears)
-
-      return diffA - diffB
+      return hoursDiff + (Math.random() - 0.5) * 4
     })
 }
 
@@ -404,30 +394,6 @@ function getAvailableNurses(
   })
 }
 
-function getCurrentDayAssigned(
-  dateStr: string,
-  shiftType: ShiftType,
-  assignments: Record<string, DailyAssignment>,
-  nurses: User[]
-): User[] {
-  const assignedIds = assignments[dateStr][shiftType] || []
-  return nurses.filter((n) => assignedIds.includes(n.id))
-}
-
-function calculateAvgYears(nurses: User[]): number {
-  if (nurses.length === 0) return 0
-  return nurses.reduce((sum, n) => sum + n.yearsOfExperience, 0) / nurses.length
-}
-
-function calculateMedianYears(nurses: User[]): number {
-  if (nurses.length === 0) return 0
-  const sorted = [...nurses].sort((a, b) => a.yearsOfExperience - b.yearsOfExperience)
-  const mid = Math.floor(sorted.length / 2)
-  if (sorted.length % 2 === 0) {
-    return (sorted[mid - 1].yearsOfExperience + sorted[mid].yearsOfExperience) / 2
-  }
-  return sorted[mid].yearsOfExperience
-}
 
 function updateScore(
   nurseScores: Map<string, NurseScore>,

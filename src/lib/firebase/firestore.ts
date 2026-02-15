@@ -196,6 +196,10 @@ export async function getScheduleByMonth(
   } as Schedule
 }
 
+export async function deleteSchedule(scheduleId: string): Promise<void> {
+  await deleteDoc(doc(getDb(), 'schedules', scheduleId))
+}
+
 export async function updateSchedule(scheduleId: string, data: Partial<Schedule>): Promise<void> {
   await updateDoc(doc(getDb(), 'schedules', scheduleId), {
     ...data,

@@ -10,6 +10,7 @@ import {
   getUsersByOrganization,
   getScheduleByMonth,
   createSchedule,
+  deleteSchedule,
   updateSchedule,
 } from '@/lib/firebase/firestore'
 import { generateSchedule } from '@/lib/scheduler/generator'
@@ -107,26 +108,12 @@ export default function SchedulePage() {
         holidays,
       })
 
-      // Save to Firestore
-      if (schedule) {
-        await updateSchedule(schedule.id, {
-          assignments: newSchedule.assignments,
-          statistics: newSchedule.statistics,
-          violations: newSchedule.violations,
-          status: 'draft',
-        })
-        setSchedule({
-          ...schedule,
-          assignments: newSchedule.assignments,
-          statistics: newSchedule.statistics,
-          violations: newSchedule.violations,
-          status: 'draft',
-          updatedAt: new Date(),
-        })
-      } else {
-        const id = await createSchedule(newSchedule)
-        setSchedule({ ...newSchedule, id })
+      // Save to Firestore (delete old + create new for reliable update)
+      if (schedule?.id) {
+        await deleteSchedule(schedule.id)
       }
+      const id = await createSchedule(newSchedule)
+      setSchedule({ ...newSchedule, id })
 
       toast({
         title: '생성 완료',
