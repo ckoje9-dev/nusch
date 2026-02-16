@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { useAuth } from '@/lib/firebase/auth-context'
 import { getScheduleByMonth, getUsersByOrganization } from '@/lib/firebase/firestore'
@@ -12,18 +12,26 @@ import {
   ChevronLeft,
   ChevronRight,
   Download,
-  Clock,
+  AlertTriangle,
 } from 'lucide-react'
 import { cn, getKoreanDayName, isWeekend } from '@/lib/utils'
 import type { Schedule, User, ShiftType } from '@/types'
 import { SHIFT_TIMES } from '@/types'
 
 const SHIFT_COLORS: Record<ShiftType, string> = {
-  day: 'bg-blue-500',
-  evening: 'bg-amber-500',
-  night: 'bg-indigo-500',
-  charge: 'bg-red-500',
-  off: 'bg-gray-300',
+  day: 'bg-blue-100 text-blue-800',
+  evening: 'bg-amber-100 text-amber-800',
+  night: 'bg-indigo-100 text-indigo-800',
+  charge: 'bg-red-100 text-red-800',
+  off: 'bg-gray-100 text-gray-600',
+}
+
+const SHIFT_SHORT: Record<ShiftType, string> = {
+  day: 'D',
+  evening: 'E',
+  night: 'N',
+  charge: 'C',
+  off: 'O',
 }
 
 const SHIFT_LABELS: Record<ShiftType, string> = {
@@ -39,11 +47,13 @@ export default function NurseSchedulePage() {
   const { toast } = useToast()
   const [loading, setLoading] = useState(true)
   const [schedule, setSchedule] = useState<Schedule | null>(null)
-  const [colleagues, setColleagues] = useState<User[]>([])
+  const [staff, setStaff] = useState<User[]>([])
   const [currentMonth, setCurrentMonth] = useState(() => {
     const now = new Date()
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
   })
+  const [filterNurseId, setFilterNurseId] = useState<string>('all')
+  const [showMonthPicker, setShowMonthPicker] = useState(false)
 
   const loadData = async () => {
     if (!userData?.organizationId) return
@@ -56,7 +66,7 @@ export default function NurseSchedulePage() {
       ])
 
       setSchedule(existingSchedule)
-      setColleagues(users.filter((u) => u.role === 'nurse'))
+      setStaff(users.filter((u) => u.role === 'nurse'))
     } catch (error) {
       console.error('Failed to load data:', error)
     } finally {
@@ -80,58 +90,39 @@ export default function NurseSchedulePage() {
     setCurrentMonth(next)
   }
 
-  const getMyShift = (dateStr: string): { type: ShiftType; time: string } | null => {
-    if (!schedule || !userData) return null
-
-    const assignment = schedule.assignments[dateStr]
-    if (!assignment) return null
-
-    for (const type of ['day', 'evening', 'night', 'charge', 'off'] as ShiftType[]) {
-      if (assignment[type]?.includes(userData.id)) {
-        const times = SHIFT_TIMES[type]
-        return {
-          type,
-          time: times.start ? `${times.start} - ${times.end}` : '휴무',
-        }
-      }
-    }
-    return null
-  }
-
   const exportToGoogleCalendar = () => {
     if (!schedule || !userData) return
 
-    // Generate ICS content
     const events: string[] = []
-    const [year, month] = currentMonth.split('-').map(Number)
-    const daysInMonth = new Date(year, month, 0).getDate()
+    const [y, m] = currentMonth.split('-').map(Number)
+    const dIM = new Date(y, m, 0).getDate()
 
-    for (let day = 1; day <= daysInMonth; day++) {
-      const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
-      const shift = getMyShift(dateStr)
+    for (let day = 1; day <= dIM; day++) {
+      const dateStr = `${y}-${String(m).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+      const assignment = schedule.assignments[dateStr]
+      if (!assignment) continue
 
-      if (shift && shift.type !== 'off') {
-        const times = SHIFT_TIMES[shift.type]
-        const [startH, startM] = times.start.split(':').map(Number)
-        const [endH, endM] = times.end.split(':').map(Number)
+      for (const type of ['day', 'evening', 'night', 'charge'] as ShiftType[]) {
+        if (assignment[type]?.includes(userData.id)) {
+          const times = SHIFT_TIMES[type]
+          const [startH, startM] = times.start.split(':').map(Number)
+          const [endH, endM] = times.end.split(':').map(Number)
 
-        const startDate = new Date(year, month - 1, day, startH, startM)
-        const endDate = new Date(year, month - 1, day, endH, endM)
+          const startDate = new Date(y, m - 1, day, startH, startM)
+          const endDate = new Date(y, m - 1, day, endH, endM)
+          if (type === 'night') endDate.setDate(endDate.getDate() + 1)
 
-        // Handle night shift ending next day
-        if (shift.type === 'night') {
-          endDate.setDate(endDate.getDate() + 1)
-        }
+          const formatDate = (d: Date) =>
+            d.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '')
 
-        const formatDate = (d: Date) =>
-          d.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '')
-
-        events.push(`BEGIN:VEVENT
+          events.push(`BEGIN:VEVENT
 DTSTART:${formatDate(startDate)}
 DTEND:${formatDate(endDate)}
-SUMMARY:${SHIFT_LABELS[shift.type]} 근무
+SUMMARY:${SHIFT_LABELS[type]} 근무
 DESCRIPTION:NuSch 근무표
 END:VEVENT`)
+          break
+        }
       }
     }
 
@@ -176,13 +167,25 @@ END:VCALENDAR`
     }
   })
 
-  // My statistics
-  const myStats = schedule?.statistics[userData?.id || '']
+  // Count my shifts this month
+  const myShiftCounts: Record<ShiftType, number> = { day: 0, evening: 0, night: 0, charge: 0, off: 0 }
+  if (schedule && userData) {
+    for (const d of days) {
+      const assignment = schedule.assignments[d.dateStr]
+      if (!assignment) continue
+      for (const type of ['charge', 'day', 'evening', 'night', 'off'] as ShiftType[]) {
+        if (assignment[type]?.includes(userData.id)) {
+          myShiftCounts[type]++
+          break
+        }
+      }
+    }
+  }
 
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold">내 근무표</h1>
           <p className="text-gray-500">{userData?.name}</p>
@@ -199,7 +202,52 @@ END:VCALENDAR`
           <Button variant="ghost" size="icon" onClick={prevMonth}>
             <ChevronLeft className="h-5 w-5" />
           </Button>
-          <p className="text-xl font-bold">{year}년 {month}월</p>
+          <div className="text-center relative">
+            <button
+              onClick={() => setShowMonthPicker(!showMonthPicker)}
+              className="text-xl font-bold hover:text-blue-600 transition-colors cursor-pointer"
+            >
+              {year}년 {month}월
+            </button>
+            {showMonthPicker && (
+              <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 bg-white border rounded-lg shadow-lg z-50 p-3 w-[280px]">
+                <div className="flex items-center justify-between mb-2">
+                  <button
+                    onClick={() => setCurrentMonth(`${year - 1}-${String(month).padStart(2, '0')}`)}
+                    className="p-1 hover:bg-gray-100 rounded"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </button>
+                  <span className="font-semibold">{year}년</span>
+                  <button
+                    onClick={() => setCurrentMonth(`${year + 1}-${String(month).padStart(2, '0')}`)}
+                    className="p-1 hover:bg-gray-100 rounded"
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </button>
+                </div>
+                <div className="grid grid-cols-4 gap-1">
+                  {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
+                    <button
+                      key={m}
+                      onClick={() => {
+                        setCurrentMonth(`${year}-${String(m).padStart(2, '0')}`)
+                        setShowMonthPicker(false)
+                      }}
+                      className={cn(
+                        'py-2 text-sm rounded hover:bg-blue-50 transition-colors',
+                        m === month
+                          ? 'bg-blue-600 text-white hover:bg-blue-700'
+                          : 'text-gray-700'
+                      )}
+                    >
+                      {m}월
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
           <Button variant="ghost" size="icon" onClick={nextMonth}>
             <ChevronRight className="h-5 w-5" />
           </Button>
@@ -215,122 +263,192 @@ END:VCALENDAR`
         </Card>
       ) : (
         <>
-          {/* My Stats */}
-          {myStats && (
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-lg">이번 달 통계</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-3 gap-4 text-center">
-                  <div>
-                    <p className="text-2xl font-bold text-blue-600">
-                      {myStats.totalHours}h
-                    </p>
-                    <p className="text-sm text-gray-500">총 근무시간</p>
-                  </div>
-                  <div>
-                    <p className="text-2xl font-bold text-indigo-600">
-                      {myStats.chargeCount}회
-                    </p>
-                    <p className="text-sm text-gray-500">Charge</p>
-                  </div>
-                  <div>
-                    <p
-                      className={cn(
-                        'text-2xl font-bold',
-                        myStats.fairnessScore >= 80
-                          ? 'text-green-600'
-                          : myStats.fairnessScore >= 60
-                          ? 'text-yellow-600'
-                          : 'text-red-600'
-                      )}
-                    >
-                      {myStats.fairnessScore}
-                    </p>
-                    <p className="text-sm text-gray-500">공평성</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Calendar */}
-          <div className="grid grid-cols-7 gap-2">
-            {['일', '월', '화', '수', '목', '금', '토'].map((day, i) => (
-              <div
-                key={day}
-                className={cn(
-                  'text-center text-sm font-medium py-2',
-                  i === 0 ? 'text-red-500' : i === 6 ? 'text-blue-500' : 'text-gray-500'
-                )}
-              >
-                {day}
-              </div>
-            ))}
-
-            {/* Empty cells for first week */}
-            {Array.from({ length: new Date(year, month - 1, 1).getDay() }).map((_, i) => (
-              <div key={`empty-${i}`} />
-            ))}
-
-            {/* Days */}
-            {days.map((d) => {
-              const shift = getMyShift(d.dateStr)
-
-              return (
-                <Card
-                  key={d.dateStr}
-                  className={cn(
-                    'p-2 min-h-[80px]',
-                    d.isWeekend && 'bg-gray-50'
-                  )}
-                >
-                  <p
-                    className={cn(
-                      'text-sm font-medium',
-                      d.date.getDay() === 0 && 'text-red-500',
-                      d.date.getDay() === 6 && 'text-blue-500'
-                    )}
-                  >
-                    {d.day}
-                  </p>
-                  {shift && (
-                    <div className="mt-1">
-                      <span
-                        className={cn(
-                          'inline-block w-full text-center text-white text-xs font-semibold py-1 rounded',
-                          SHIFT_COLORS[shift.type]
-                        )}
-                      >
-                        {SHIFT_LABELS[shift.type]}
-                      </span>
-                      {shift.type !== 'off' && (
-                        <p className="text-[10px] text-gray-500 mt-1 text-center">
-                          {SHIFT_TIMES[shift.type].start}
-                        </p>
-                      )}
-                    </div>
-                  )}
-                </Card>
-              )
-            })}
-          </div>
-
-          {/* Legend */}
+          {/* My Shift Counts */}
           <Card>
             <CardContent className="py-4">
               <div className="flex flex-wrap justify-center gap-4">
                 {(['day', 'evening', 'night', 'charge', 'off'] as ShiftType[]).map((type) => (
                   <div key={type} className="flex items-center gap-2">
-                    <div className={cn('w-4 h-4 rounded', SHIFT_COLORS[type])} />
-                    <span className="text-sm">
-                      {SHIFT_LABELS[type]}
-                      {type !== 'off' && (
-                        <span className="text-gray-500 ml-1">
-                          ({SHIFT_TIMES[type].start}-{SHIFT_TIMES[type].end})
-                        </span>
+                    <span
+                      className={cn(
+                        'inline-flex items-center justify-center w-7 h-7 text-xs font-bold rounded',
+                        SHIFT_COLORS[type]
                       )}
+                    >
+                      {SHIFT_SHORT[type]}
+                    </span>
+                    <span className="text-sm font-medium">
+                      {myShiftCounts[type]}회
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Calendar View - Google Calendar Style */}
+          <Card>
+            <CardContent className="p-2 sm:p-4">
+              {/* Filter dropdown */}
+              <div className="flex justify-end mb-3">
+                <select
+                  value={filterNurseId}
+                  onChange={(e) => setFilterNurseId(e.target.value)}
+                  className="text-sm border border-gray-300 rounded-md px-3 py-1.5 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                >
+                  <option value="all">전체 보기</option>
+                  {staff.map((nurse) => (
+                    <option key={nurse.id} value={nurse.id}>
+                      {nurse.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Day of week headers */}
+              <div className="grid grid-cols-7 border-b">
+                {['일', '월', '화', '수', '목', '금', '토'].map((dayName, i) => (
+                  <div
+                    key={dayName}
+                    className={cn(
+                      'py-2 text-center text-sm font-medium',
+                      i === 0 ? 'text-red-500' : i === 6 ? 'text-blue-500' : 'text-gray-500'
+                    )}
+                  >
+                    {dayName}
+                  </div>
+                ))}
+              </div>
+
+              {/* Calendar grid */}
+              <div className="grid grid-cols-7">
+                {(() => {
+                  const firstDayOfWeek = new Date(year, month - 1, 1).getDay()
+                  const cells: React.ReactNode[] = []
+
+                  for (let i = 0; i < firstDayOfWeek; i++) {
+                    cells.push(
+                      <div key={`empty-${i}`} className="min-h-[120px] border-b border-r bg-gray-50/50" />
+                    )
+                  }
+
+                  days.forEach((d) => {
+                    const assignment = schedule.assignments[d.dateStr]
+                    const dayViolations = schedule.violations.filter((v) => v.date === d.dateStr)
+                    const dayOfWeek = d.date.getDay()
+                    const isSunday = dayOfWeek === 0
+                    const isSaturday = dayOfWeek === 6
+
+                    const isFiltering = filterNurseId !== 'all'
+                    let filteredNurseShift: ShiftType | null = null
+                    if (isFiltering && assignment) {
+                      for (const type of ['charge', 'day', 'evening', 'night', 'off'] as ShiftType[]) {
+                        if (assignment[type]?.includes(filterNurseId)) {
+                          filteredNurseShift = type
+                          break
+                        }
+                      }
+                    }
+
+                    cells.push(
+                      <div
+                        key={d.dateStr}
+                        className={cn(
+                          'min-h-[120px] border-b border-r p-1 relative',
+                          d.isWeekend ? 'bg-gray-50/80' : 'bg-white'
+                        )}
+                      >
+                        {/* Date number */}
+                        <div className="flex items-center justify-between mb-1">
+                          <span
+                            className={cn(
+                              'text-sm font-medium w-6 h-6 flex items-center justify-center rounded-full',
+                              isSunday && 'text-red-500',
+                              isSaturday && 'text-blue-500',
+                              !isSunday && !isSaturday && 'text-gray-700'
+                            )}
+                          >
+                            {d.day}
+                          </span>
+                          {dayViolations.length > 0 && (
+                            <div className="relative group">
+                              <AlertTriangle className="h-3.5 w-3.5 text-yellow-500 cursor-pointer" />
+                              <div className="absolute right-0 top-full mt-1 hidden group-hover:block z-50">
+                                <div className="bg-gray-900 text-white text-xs rounded px-2 py-1.5 whitespace-nowrap shadow-lg max-w-[250px]">
+                                  {dayViolations.map((v, i) => {
+                                    const nurse = staff.find((s) => s.id === v.userId)
+                                    return (
+                                      <div key={i} className="py-0.5">
+                                        <span className="font-medium">{nurse?.name}</span>: {v.reason}
+                                      </div>
+                                    )
+                                  })}
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Shift assignments */}
+                        {assignment && !isFiltering && (
+                          <div className="space-y-0.5">
+                            {(['charge', 'day', 'evening', 'night'] as ShiftType[]).map((type) => {
+                              const nurseIds = assignment[type]
+                              if (!nurseIds || nurseIds.length === 0) return null
+
+                              return (
+                                <div
+                                  key={type}
+                                  className={cn(
+                                    'text-[10px] leading-tight rounded px-1 py-0.5 truncate',
+                                    SHIFT_COLORS[type]
+                                  )}
+                                  title={nurseIds.map((id) => staff.find((s) => s.id === id)?.name).join(', ')}
+                                >
+                                  <span className="font-bold mr-0.5">{SHIFT_SHORT[type]}</span>
+                                  {nurseIds.map((id) => staff.find((s) => s.id === id)?.name).join(', ')}
+                                </div>
+                              )
+                            })}
+                          </div>
+                        )}
+
+                        {/* Filtered nurse view */}
+                        {assignment && isFiltering && filteredNurseShift && (
+                          <div className="flex items-center justify-center h-[80px]">
+                            <span
+                              className={cn(
+                                'inline-flex items-center justify-center w-10 h-10 text-base font-bold rounded-lg',
+                                SHIFT_COLORS[filteredNurseShift]
+                              )}
+                            >
+                              {SHIFT_SHORT[filteredNurseShift]}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })
+
+                  const totalCells = firstDayOfWeek + daysInMonth
+                  const remainingCells = totalCells % 7 === 0 ? 0 : 7 - (totalCells % 7)
+                  for (let i = 0; i < remainingCells; i++) {
+                    cells.push(
+                      <div key={`trail-${i}`} className="min-h-[120px] border-b border-r bg-gray-50/50" />
+                    )
+                  }
+
+                  return cells
+                })()}
+              </div>
+
+              {/* Legend */}
+              <div className="flex flex-wrap gap-3 mt-3 px-1">
+                {(['charge', 'day', 'evening', 'night'] as ShiftType[]).map((type) => (
+                  <div key={type} className="flex items-center gap-1">
+                    <span className={cn('inline-block w-3 h-3 rounded', SHIFT_COLORS[type])} />
+                    <span className="text-xs text-gray-600">
+                      {SHIFT_SHORT[type]} - {SHIFT_LABELS[type]}
                     </span>
                   </div>
                 ))}
