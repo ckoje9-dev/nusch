@@ -11,12 +11,13 @@ import {
   Calendar,
   ChevronLeft,
   ChevronRight,
-  Download,
   AlertTriangle,
 } from 'lucide-react'
 import { cn, getKoreanDayName, isWeekend } from '@/lib/utils'
 import type { Schedule, User, ShiftType } from '@/types'
 import { SHIFT_TIMES } from '@/types'
+import { requestCalendarAccess, syncToGoogleCalendar } from '@/lib/google-calendar'
+import type { CalendarEvent } from '@/lib/google-calendar'
 
 const SHIFT_COLORS: Record<ShiftType, string> = {
   day: 'bg-blue-100 text-blue-800',
@@ -90,60 +91,54 @@ export default function NurseSchedulePage() {
     setCurrentMonth(next)
   }
 
-  const exportToGoogleCalendar = () => {
+  const [syncing, setSyncing] = useState(false)
+
+  const handleGoogleCalendarSync = async () => {
     if (!schedule || !userData) return
 
-    const events: string[] = []
-    const [y, m] = currentMonth.split('-').map(Number)
-    const dIM = new Date(y, m, 0).getDate()
+    setSyncing(true)
+    try {
+      // 1. OAuth 팝업으로 access token 획득
+      const accessToken = await requestCalendarAccess()
 
-    for (let day = 1; day <= dIM; day++) {
-      const dateStr = `${y}-${String(m).padStart(2, '0')}-${String(day).padStart(2, '0')}`
-      const assignment = schedule.assignments[dateStr]
-      if (!assignment) continue
+      // 2. 내 근무 이벤트 목록 구성
+      const [y, m] = currentMonth.split('-').map(Number)
+      const dIM = new Date(y, m, 0).getDate()
+      const calendarEvents: CalendarEvent[] = []
 
-      for (const type of ['day', 'evening', 'night', 'charge'] as ShiftType[]) {
-        if (assignment[type]?.includes(userData.id)) {
-          const times = SHIFT_TIMES[type]
-          const [startH, startM] = times.start.split(':').map(Number)
-          const [endH, endM] = times.end.split(':').map(Number)
+      for (let day = 1; day <= dIM; day++) {
+        const dateStr = `${y}-${String(m).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+        const assignment = schedule.assignments[dateStr]
+        if (!assignment) continue
 
-          const startDate = new Date(y, m - 1, day, startH, startM)
-          const endDate = new Date(y, m - 1, day, endH, endM)
-          if (type === 'night') endDate.setDate(endDate.getDate() + 1)
-
-          const formatDate = (d: Date) =>
-            d.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '')
-
-          events.push(`BEGIN:VEVENT
-DTSTART:${formatDate(startDate)}
-DTEND:${formatDate(endDate)}
-SUMMARY:${SHIFT_LABELS[type]} 근무
-DESCRIPTION:NuSch 근무표
-END:VEVENT`)
-          break
+        for (const type of ['charge', 'day', 'evening', 'night'] as ShiftType[]) {
+          if (assignment[type]?.includes(userData.id)) {
+            calendarEvents.push({
+              date: dateStr,
+              shiftType: type,
+              shiftLabel: SHIFT_LABELS[type],
+            })
+            break
+          }
         }
       }
+
+      // 3. Google Calendar에 동기화
+      const created = await syncToGoogleCalendar(accessToken, currentMonth, calendarEvents)
+
+      toast({
+        title: '동기화 완료',
+        description: `Google 캘린더에 ${created}개의 근무 일정이 추가되었습니다.`,
+      })
+    } catch (error: any) {
+      toast({
+        title: '동기화 실패',
+        description: error.message || '다시 시도해주세요.',
+        variant: 'destructive',
+      })
+    } finally {
+      setSyncing(false)
     }
-
-    const icsContent = `BEGIN:VCALENDAR
-VERSION:2.0
-PRODID:-//NuSch//Nurse Schedule//KO
-${events.join('\n')}
-END:VCALENDAR`
-
-    const blob = new Blob([icsContent], { type: 'text/calendar;charset=utf-8' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `nusch_${currentMonth}.ics`
-    a.click()
-    URL.revokeObjectURL(url)
-
-    toast({
-      title: '내보내기 완료',
-      description: 'Google Calendar에서 가져오기하세요.',
-    })
   }
 
   if (loading) {
@@ -190,9 +185,13 @@ END:VCALENDAR`
           <h1 className="text-2xl font-bold">내 근무표</h1>
           <p className="text-gray-500">{userData?.name}</p>
         </div>
-        <Button variant="outline" onClick={exportToGoogleCalendar} disabled={!schedule}>
-          <Download className="h-4 w-4 mr-2" />
-          캘린더 내보내기
+        <Button variant="outline" onClick={handleGoogleCalendarSync} disabled={!schedule || syncing}>
+          {syncing ? (
+            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+          ) : (
+            <Calendar className="h-4 w-4 mr-2" />
+          )}
+          {syncing ? '동기화 중...' : 'Google 캘린더 동기화'}
         </Button>
       </div>
 
