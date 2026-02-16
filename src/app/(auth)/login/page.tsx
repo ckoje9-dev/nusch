@@ -8,6 +8,8 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { Calendar, Loader2 } from 'lucide-react'
+import { getDoc, doc } from 'firebase/firestore'
+import { db } from '@/lib/firebase/config'
 import { useAuth } from '@/lib/firebase/auth-context'
 import { useToast } from '@/hooks/use-toast'
 
@@ -25,11 +27,21 @@ export default function LoginPage() {
 
     try {
       await signIn(email, password)
-      toast({
-        title: '로그인 성공',
-        description: '환영합니다!',
-      })
-      router.push('/admin/schedule')
+
+      // Fetch user role to route correctly
+      const { getAuth } = await import('firebase/auth')
+      const currentUser = getAuth().currentUser
+      if (currentUser && db) {
+        const userDoc = await getDoc(doc(db, 'users', currentUser.uid))
+        const role = userDoc.exists() ? userDoc.data().role : 'admin'
+        toast({
+          title: '로그인 성공',
+          description: '환영합니다!',
+        })
+        router.push(role === 'nurse' ? '/nurse/schedule' : '/admin/schedule')
+      } else {
+        router.push('/admin/schedule')
+      }
     } catch (error: any) {
       toast({
         title: '로그인 실패',

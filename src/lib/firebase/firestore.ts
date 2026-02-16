@@ -118,6 +118,33 @@ export async function updateUser(userId: string, data: Partial<User>): Promise<v
   })
 }
 
+export async function getUnassignedNurses(): Promise<User[]> {
+  const q = query(
+    collection(getDb(), 'users'),
+    where('role', '==', 'nurse'),
+    where('organizationId', '==', '')
+  )
+  const snapshot = await getDocs(q)
+  return snapshot.docs.map((doc) => {
+    const data = doc.data()
+    return {
+      ...data,
+      createdAt: data.createdAt?.toDate() || new Date(),
+      updatedAt: data.updatedAt?.toDate() || new Date(),
+    } as User
+  })
+}
+
+export async function assignNurseToOrganization(
+  userId: string,
+  orgId: string
+): Promise<void> {
+  await updateDoc(doc(getDb(), 'users', userId), {
+    organizationId: orgId,
+    updatedAt: Timestamp.now(),
+  })
+}
+
 export async function addNurseToOrganization(
   orgId: string,
   email: string,

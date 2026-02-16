@@ -16,6 +16,7 @@ import {
   RefreshCcw,
   Palmtree,
   CheckSquare,
+  Building2,
 } from 'lucide-react'
 import { useState } from 'react'
 import { cn } from '@/lib/utils'
@@ -40,8 +41,47 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
     )
   }
 
+  const handleSignOut = async () => {
+    await signOut()
+    router.push('/')
+  }
+
   if (!user) {
     return null
+  }
+
+  // Nurse without organization
+  if (userData?.role === 'nurse' && !userData.organizationId) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
+        <div className="max-w-md w-full text-center space-y-4">
+          <div className="flex items-center justify-center gap-2 mb-4">
+            <Calendar className="h-8 w-8 text-blue-600" />
+            <span className="text-2xl font-bold text-blue-600">NuSch</span>
+          </div>
+          <div className="bg-white rounded-lg border p-8 space-y-4">
+            <Building2 className="h-12 w-12 text-gray-300 mx-auto" />
+            <h2 className="text-xl font-bold">소속 부서가 없습니다</h2>
+            <p className="text-gray-500 text-sm">
+              관리자(수간호사)가 근무자 관리에서 추가해야 합니다.
+              <br />
+              관리자에게 문의해주세요.
+            </p>
+            <p className="text-xs text-gray-400">
+              가입 이메일: {userData.email}
+            </p>
+          </div>
+          <Button
+            variant="ghost"
+            className="text-gray-600"
+            onClick={handleSignOut}
+          >
+            <LogOut className="h-5 w-5 mr-2" />
+            로그아웃
+          </Button>
+        </div>
+      </div>
+    )
   }
 
   const isAdmin = userData?.role === 'admin'
@@ -60,11 +100,6 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
   ]
 
   const navItems = isAdmin ? adminNavItems : nurseNavItems
-
-  const handleSignOut = async () => {
-    await signOut()
-    router.push('/')
-  }
 
   return (
     <div className="min-h-screen bg-gray-50">

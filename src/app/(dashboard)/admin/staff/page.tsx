@@ -1,11 +1,10 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
-import { Switch } from '@/components/ui/switch'
 import {
   Dialog,
   DialogContent,
@@ -13,7 +12,6 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from '@/components/ui/dialog'
 import {
   Select,
@@ -25,12 +23,14 @@ import {
 import { useAuth } from '@/lib/firebase/auth-context'
 import {
   getUsersByOrganization,
-  addNurseToOrganization,
+  getUnassignedNurses,
+  assignNurseToOrganization,
   updateUser,
   deleteUser,
 } from '@/lib/firebase/firestore'
 import { useToast } from '@/hooks/use-toast'
-import { Loader2, Plus, Pencil, Trash2, User } from 'lucide-react'
+import { Loader2, Plus, Pencil, Trash2, User, UserPlus, Check } from 'lucide-react'
+import { cn } from '@/lib/utils'
 import type { User as UserType, DedicatedRole, ShiftType } from '@/types'
 
 export default function StaffPage() {
@@ -41,9 +41,14 @@ export default function StaffPage() {
   const [addDialogOpen, setAddDialogOpen] = useState(false)
   const [editingStaff, setEditingStaff] = useState<UserType | null>(null)
 
-  // Form states
+  // Add dialog states
+  const [unassignedNurses, setUnassignedNurses] = useState<UserType[]>([])
+  const [loadingNurses, setLoadingNurses] = useState(false)
+  const [selectedNurseIds, setSelectedNurseIds] = useState<Set<string>>(new Set())
+  const [adding, setAdding] = useState(false)
+
+  // Edit form states
   const [name, setName] = useState('')
-  const [email, setEmail] = useState('')
   const [yearsOfExperience, setYearsOfExperience] = useState(1)
   const [dedicatedRole, setDedicatedRole] = useState<DedicatedRole>(null)
   const [selectedShiftsOnly, setSelectedShiftsOnly] = useState<ShiftType[] | null>(null)
@@ -65,30 +70,52 @@ export default function StaffPage() {
     loadStaff()
   }, [userData?.organizationId])
 
-  const resetForm = () => {
-    setName('')
-    setEmail('')
-    setYearsOfExperience(1)
-    setDedicatedRole(null)
-    setSelectedShiftsOnly(null)
+  const loadUnassignedNurses = async () => {
+    setLoadingNurses(true)
+    try {
+      const nurses = await getUnassignedNurses()
+      setUnassignedNurses(nurses)
+    } catch (error) {
+      console.error('Failed to load unassigned nurses:', error)
+    } finally {
+      setLoadingNurses(false)
+    }
   }
 
-  const handleAdd = async () => {
-    if (!userData?.organizationId || !name || !email) return
+  const handleOpenAddDialog = () => {
+    setSelectedNurseIds(new Set())
+    setAddDialogOpen(true)
+    loadUnassignedNurses()
+  }
 
+  const toggleNurseSelection = (nurseId: string) => {
+    setSelectedNurseIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(nurseId)) {
+        next.delete(nurseId)
+      } else {
+        next.add(nurseId)
+      }
+      return next
+    })
+  }
+
+  const handleAddSelected = async () => {
+    if (!userData?.organizationId || selectedNurseIds.size === 0) return
+
+    setAdding(true)
     try {
-      await addNurseToOrganization(
-        userData.organizationId,
-        email,
-        name,
-        yearsOfExperience
+      await Promise.all(
+        Array.from(selectedNurseIds).map((id) =>
+          assignNurseToOrganization(id, userData.organizationId)
+        )
       )
       toast({
         title: '추가 완료',
-        description: `${name} 간호사가 추가되었습니다.`,
+        description: `${selectedNurseIds.size}명의 간호사가 추가되었습니다.`,
       })
       setAddDialogOpen(false)
-      resetForm()
+      setSelectedNurseIds(new Set())
       loadStaff()
     } catch (error) {
       toast({
@@ -96,6 +123,8 @@ export default function StaffPage() {
         description: '다시 시도해주세요.',
         variant: 'destructive',
       })
+    } finally {
+      setAdding(false)
     }
   }
 
@@ -117,7 +146,6 @@ export default function StaffPage() {
         description: '근무자 정보가 수정되었습니다.',
       })
       setEditingStaff(null)
-      resetForm()
       loadStaff()
     } catch (error) {
       toast({
@@ -150,7 +178,6 @@ export default function StaffPage() {
   const openEditDialog = (staffMember: UserType) => {
     setEditingStaff(staffMember)
     setName(staffMember.name)
-    setEmail(staffMember.email)
     setYearsOfExperience(staffMember.yearsOfExperience)
     setDedicatedRole(staffMember.personalRules.dedicatedRole)
     setSelectedShiftsOnly(staffMember.personalRules.selectedShiftsOnly)
@@ -171,56 +198,93 @@ export default function StaffPage() {
           <h1 className="text-2xl font-bold">근무자 관리</h1>
           <p className="text-gray-500">간호사 명단과 개인 규칙을 관리합니다.</p>
         </div>
-        <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
-          <DialogTrigger asChild>
-            <Button onClick={resetForm}>
-              <Plus className="h-4 w-4 mr-2" />
-              근무자 추가
-            </Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>근무자 추가</DialogTitle>
-              <DialogDescription>새로운 간호사 정보를 입력하세요.</DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4 py-4">
-              <div className="space-y-2">
-                <Label>이름</Label>
-                <Input
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="홍길동"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>이메일</Label>
-                <Input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="nurse@hospital.com"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>연차</Label>
-                <Input
-                  type="number"
-                  min={1}
-                  max={30}
-                  value={yearsOfExperience}
-                  onChange={(e) => setYearsOfExperience(parseInt(e.target.value) || 1)}
-                />
-              </div>
-            </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setAddDialogOpen(false)}>
-                취소
-              </Button>
-              <Button onClick={handleAdd}>추가</Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+        <Button onClick={handleOpenAddDialog}>
+          <Plus className="h-4 w-4 mr-2" />
+          근무자 추가
+        </Button>
       </div>
+
+      {/* Add Dialog - Select from registered nurses */}
+      <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>근무자 추가</DialogTitle>
+            <DialogDescription>
+              가입된 간호사를 선택하여 우리 부서에 추가합니다.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            {loadingNurses ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="h-6 w-6 animate-spin text-blue-600" />
+              </div>
+            ) : unassignedNurses.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-8 text-center">
+                <UserPlus className="h-10 w-10 text-gray-300 mb-3" />
+                <p className="text-gray-500 text-sm">
+                  소속이 없는 간호사가 없습니다.
+                </p>
+                <p className="text-gray-400 text-xs mt-1">
+                  간호사가 먼저 회원가입을 해야 합니다.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-2 max-h-[300px] overflow-y-auto">
+                {unassignedNurses.map((nurse) => {
+                  const isSelected = selectedNurseIds.has(nurse.id)
+                  return (
+                    <button
+                      key={nurse.id}
+                      type="button"
+                      onClick={() => toggleNurseSelection(nurse.id)}
+                      className={cn(
+                        'w-full flex items-center gap-3 p-3 rounded-lg border transition-colors text-left',
+                        isSelected
+                          ? 'border-blue-500 bg-blue-50'
+                          : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                      )}
+                    >
+                      <div
+                        className={cn(
+                          'h-5 w-5 rounded border-2 flex items-center justify-center shrink-0 transition-colors',
+                          isSelected
+                            ? 'border-blue-500 bg-blue-500'
+                            : 'border-gray-300'
+                        )}
+                      >
+                        {isSelected && <Check className="h-3 w-3 text-white" />}
+                      </div>
+                      <div className="h-8 w-8 rounded-full bg-green-100 flex items-center justify-center shrink-0">
+                        <span className="text-green-600 font-semibold text-sm">
+                          {nurse.name.charAt(0)}
+                        </span>
+                      </div>
+                      <div className="min-w-0">
+                        <p className="font-medium text-sm">{nurse.name}</p>
+                        <p className="text-xs text-gray-500 truncate">{nurse.email}</p>
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAddDialogOpen(false)}>
+              취소
+            </Button>
+            <Button
+              onClick={handleAddSelected}
+              disabled={selectedNurseIds.size === 0 || adding}
+            >
+              {adding && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              {selectedNurseIds.size > 0
+                ? `${selectedNurseIds.size}명 추가`
+                : '추가'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Staff List */}
       {staff.length === 0 ? (
@@ -228,7 +292,7 @@ export default function StaffPage() {
           <CardContent className="flex flex-col items-center justify-center py-12">
             <User className="h-12 w-12 text-gray-300 mb-4" />
             <p className="text-gray-500">등록된 간호사가 없습니다.</p>
-            <Button className="mt-4" onClick={() => setAddDialogOpen(true)}>
+            <Button className="mt-4" onClick={handleOpenAddDialog}>
               <Plus className="h-4 w-4 mr-2" />
               첫 번째 근무자 추가
             </Button>
