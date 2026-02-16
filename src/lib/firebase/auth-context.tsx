@@ -7,10 +7,17 @@ import {
   createUserWithEmailAndPassword,
   signOut as firebaseSignOut,
   onAuthStateChanged,
+  GoogleAuthProvider,
+  signInWithPopup,
 } from 'firebase/auth'
 import { doc, getDoc, setDoc } from 'firebase/firestore'
 import { auth, db } from './config'
 import type { User, UserRole } from '@/types'
+
+interface GoogleSignInResult {
+  isNewUser: boolean
+  role?: UserRole
+}
 
 interface AuthContextType {
   user: FirebaseUser | null
@@ -18,6 +25,7 @@ interface AuthContextType {
   loading: boolean
   signIn: (email: string, password: string) => Promise<void>
   signUp: (email: string, password: string, name: string, role: UserRole, organizationId?: string) => Promise<void>
+  signInWithGoogle: () => Promise<GoogleSignInResult>
   signOut: () => Promise<void>
 }
 
@@ -89,6 +97,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUserData(newUser)
   }
 
+  const signInWithGoogleFn = async (): Promise<GoogleSignInResult> => {
+    if (!auth || !db) throw new Error('Firebase not initialized')
+    const provider = new GoogleAuthProvider()
+    const result = await signInWithPopup(auth, provider)
+
+    // Check if user already exists in Firestore
+    const userDoc = await getDoc(doc(db, 'users', result.user.uid))
+    if (userDoc.exists()) {
+      const data = userDoc.data() as User
+      setUserData(data)
+      return { isNewUser: false, role: data.role }
+    }
+
+    // New user - don't create Firestore doc yet (needs role selection)
+    return { isNewUser: true }
+  }
+
   const signOut = async () => {
     if (!auth) throw new Error('Firebase not initialized')
     await firebaseSignOut(auth)
@@ -96,7 +121,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, userData, loading, signIn, signUp, signOut }}>
+    <AuthContext.Provider value={{ user, userData, loading, signIn, signUp, signInWithGoogle: signInWithGoogleFn, signOut }}>
       {children}
     </AuthContext.Provider>
   )
