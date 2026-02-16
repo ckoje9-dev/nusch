@@ -25,8 +25,8 @@ import {
   getUsersByOrganization,
   getUnassignedNurses,
   assignNurseToOrganization,
+  unassignNurseFromOrganization,
   updateUser,
-  deleteUser,
 } from '@/lib/firebase/firestore'
 import { useToast } from '@/hooks/use-toast'
 import { Loader2, Plus, Pencil, Trash2, User, UserPlus, Check } from 'lucide-react'
@@ -46,6 +46,11 @@ export default function StaffPage() {
   const [loadingNurses, setLoadingNurses] = useState(false)
   const [selectedNurseIds, setSelectedNurseIds] = useState<Set<string>>(new Set())
   const [adding, setAdding] = useState(false)
+
+  // Remove multi-select states
+  const [removeMode, setRemoveMode] = useState(false)
+  const [selectedRemoveIds, setSelectedRemoveIds] = useState<Set<string>>(new Set())
+  const [removing, setRemoving] = useState(false)
 
   // Edit form states
   const [name, setName] = useState('')
@@ -156,22 +161,56 @@ export default function StaffPage() {
     }
   }
 
-  const handleDelete = async (userId: string, userName: string) => {
-    if (!confirm(`${userName} 간호사를 삭제하시겠습니까?`)) return
+  const toggleRemoveSelection = (id: string) => {
+    setSelectedRemoveIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) {
+        next.delete(id)
+      } else {
+        next.add(id)
+      }
+      return next
+    })
+  }
 
+  const toggleSelectAllRemove = () => {
+    if (selectedRemoveIds.size === staff.length) {
+      setSelectedRemoveIds(new Set())
+    } else {
+      setSelectedRemoveIds(new Set(staff.map((s) => s.id)))
+    }
+  }
+
+  const handleRemoveSelected = async () => {
+    if (selectedRemoveIds.size === 0) return
+    const names = staff
+      .filter((s) => selectedRemoveIds.has(s.id))
+      .map((s) => s.name)
+      .join(', ')
+    if (!confirm(`${names}\n\n위 간호사를 부서에서 제외하시겠습니까?`)) return
+
+    setRemoving(true)
     try {
-      await deleteUser(userId)
+      await Promise.all(
+        Array.from(selectedRemoveIds).map((id) =>
+          unassignNurseFromOrganization(id)
+        )
+      )
       toast({
-        title: '삭제 완료',
-        description: `${userName} 간호사가 삭제되었습니다.`,
+        title: '제외 완료',
+        description: `${selectedRemoveIds.size}명이 부서에서 제외되었습니다.`,
       })
+      setSelectedRemoveIds(new Set())
+      setRemoveMode(false)
       loadStaff()
     } catch (error) {
       toast({
-        title: '삭제 실패',
+        title: '제외 실패',
         description: '다시 시도해주세요.',
         variant: 'destructive',
       })
+    } finally {
+      setRemoving(false)
     }
   }
 
@@ -230,6 +269,37 @@ export default function StaffPage() {
               </div>
             ) : (
               <div className="space-y-2 max-h-[300px] overflow-y-auto">
+                {/* Select all for add */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (selectedNurseIds.size === unassignedNurses.length) {
+                      setSelectedNurseIds(new Set())
+                    } else {
+                      setSelectedNurseIds(new Set(unassignedNurses.map((n) => n.id)))
+                    }
+                  }}
+                  className={cn(
+                    'w-full flex items-center gap-3 p-3 rounded-lg border transition-colors text-left',
+                    selectedNurseIds.size === unassignedNurses.length
+                      ? 'border-blue-500 bg-blue-50'
+                      : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                  )}
+                >
+                  <div
+                    className={cn(
+                      'h-5 w-5 rounded border-2 flex items-center justify-center shrink-0 transition-colors',
+                      selectedNurseIds.size === unassignedNurses.length
+                        ? 'border-blue-500 bg-blue-500'
+                        : 'border-gray-300'
+                    )}
+                  >
+                    {selectedNurseIds.size === unassignedNurses.length && (
+                      <Check className="h-3 w-3 text-white" />
+                    )}
+                  </div>
+                  <p className="font-medium text-sm text-gray-700">전체 선택</p>
+                </button>
                 {unassignedNurses.map((nurse) => {
                   const isSelected = selectedNurseIds.has(nurse.id)
                   return (
@@ -300,15 +370,82 @@ export default function StaffPage() {
         </Card>
       ) : (
         <div className="space-y-4">
+          {/* Remove mode controls */}
+          {removeMode && (
+            <div className="flex items-center justify-between bg-red-50 border border-red-200 rounded-lg px-4 py-3">
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={toggleSelectAllRemove}
+                  className={cn(
+                    'h-5 w-5 rounded border-2 flex items-center justify-center shrink-0 transition-colors',
+                    selectedRemoveIds.size === staff.length
+                      ? 'border-red-500 bg-red-500'
+                      : 'border-gray-300'
+                  )}
+                >
+                  {selectedRemoveIds.size === staff.length && (
+                    <Check className="h-3 w-3 text-white" />
+                  )}
+                </button>
+                <span className="text-sm text-red-700 font-medium">
+                  {selectedRemoveIds.size > 0
+                    ? `${selectedRemoveIds.size}명 선택됨`
+                    : '제외할 간호사를 선택하세요'}
+                </span>
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setRemoveMode(false)
+                    setSelectedRemoveIds(new Set())
+                  }}
+                >
+                  취소
+                </Button>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={handleRemoveSelected}
+                  disabled={selectedRemoveIds.size === 0 || removing}
+                >
+                  {removing && <Loader2 className="h-4 w-4 mr-1 animate-spin" />}
+                  {selectedRemoveIds.size > 0
+                    ? `${selectedRemoveIds.size}명 제외`
+                    : '제외'}
+                </Button>
+              </div>
+            </div>
+          )}
+
           {staff.map((member) => (
             <Card key={member.id}>
               <CardContent className="flex items-center justify-between p-4">
                 <div className="flex items-center gap-4">
-                  <div className="h-10 w-10 rounded-full bg-blue-100 flex items-center justify-center">
-                    <span className="text-blue-600 font-semibold">
-                      {member.name.charAt(0)}
-                    </span>
-                  </div>
+                  {removeMode ? (
+                    <button
+                      type="button"
+                      onClick={() => toggleRemoveSelection(member.id)}
+                      className={cn(
+                        'h-5 w-5 rounded border-2 flex items-center justify-center shrink-0 transition-colors',
+                        selectedRemoveIds.has(member.id)
+                          ? 'border-red-500 bg-red-500'
+                          : 'border-gray-300'
+                      )}
+                    >
+                      {selectedRemoveIds.has(member.id) && (
+                        <Check className="h-3 w-3 text-white" />
+                      )}
+                    </button>
+                  ) : (
+                    <div className="h-10 w-10 rounded-full bg-blue-100 flex items-center justify-center">
+                      <span className="text-blue-600 font-semibold">
+                        {member.name.charAt(0)}
+                      </span>
+                    </div>
+                  )}
                   <div>
                     <p className="font-semibold">{member.name}</p>
                     <p className="text-sm text-gray-500">
@@ -338,22 +475,27 @@ export default function StaffPage() {
                     </div>
                   </div>
                 </div>
-                <div className="flex gap-2">
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    onClick={() => openEditDialog(member)}
-                  >
-                    <Pencil className="h-4 w-4" />
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    onClick={() => handleDelete(member.id, member.name)}
-                  >
-                    <Trash2 className="h-4 w-4 text-red-500" />
-                  </Button>
-                </div>
+                {!removeMode && (
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      onClick={() => openEditDialog(member)}
+                    >
+                      <Pencil className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      onClick={() => {
+                        setRemoveMode(true)
+                        setSelectedRemoveIds(new Set([member.id]))
+                      }}
+                    >
+                      <Trash2 className="h-4 w-4 text-red-500" />
+                    </Button>
+                  </div>
+                )}
               </CardContent>
             </Card>
           ))}

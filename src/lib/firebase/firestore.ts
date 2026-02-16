@@ -145,6 +145,15 @@ export async function assignNurseToOrganization(
   })
 }
 
+export async function unassignNurseFromOrganization(
+  userId: string
+): Promise<void> {
+  await updateDoc(doc(getDb(), 'users', userId), {
+    organizationId: '',
+    updatedAt: Timestamp.now(),
+  })
+}
+
 export async function addNurseToOrganization(
   orgId: string,
   email: string,
