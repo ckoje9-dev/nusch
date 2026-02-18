@@ -96,69 +96,109 @@ export default function SettingsPage() {
         </Button>
       </div>
 
-      {/* 동시 근무자 수 */}
+      {/* 동시 근무자 수 + 휴무 */}
       <Card>
         <CardHeader>
-          <CardTitle>동시 근무자 수</CardTitle>
-          <CardDescription>각 근무 유형별 필요 인원을 설정합니다.</CardDescription>
+          <CardTitle>동시 근무자 수 및 휴무</CardTitle>
+          <CardDescription>각 근무 유형별 필요 인원과 휴무일을 설정합니다.</CardDescription>
         </CardHeader>
-        <CardContent className="grid gap-6 sm:grid-cols-3">
-          <div className="space-y-2">
-            <Label>Day 근무</Label>
-            <Input
-              type="number"
-              min={1}
-              max={20}
-              value={settings.simultaneousStaff.day}
-              onChange={(e) =>
-                setSettings({
-                  ...settings,
-                  simultaneousStaff: {
-                    ...settings.simultaneousStaff,
-                    day: parseInt(e.target.value) || 1,
-                  },
-                })
-              }
-            />
-            <p className="text-xs text-gray-500">07:00 - 15:30</p>
+        <CardContent className="space-y-6">
+          <div className="grid gap-6 sm:grid-cols-3">
+            <div className="space-y-2">
+              <Label>Day 근무</Label>
+              <Input
+                type="number"
+                min={1}
+                max={20}
+                value={settings.simultaneousStaff.day}
+                onChange={(e) =>
+                  setSettings({
+                    ...settings,
+                    simultaneousStaff: {
+                      ...settings.simultaneousStaff,
+                      day: parseInt(e.target.value) || 1,
+                    },
+                  })
+                }
+              />
+              <p className="text-xs text-gray-500">07:00 - 15:30</p>
+            </div>
+            <div className="space-y-2">
+              <Label>Evening 근무</Label>
+              <Input
+                type="number"
+                min={1}
+                max={20}
+                value={settings.simultaneousStaff.evening}
+                onChange={(e) =>
+                  setSettings({
+                    ...settings,
+                    simultaneousStaff: {
+                      ...settings.simultaneousStaff,
+                      evening: parseInt(e.target.value) || 1,
+                    },
+                  })
+                }
+              />
+              <p className="text-xs text-gray-500">15:00 - 23:00</p>
+            </div>
+            <div className="space-y-2">
+              <Label>Night 근무</Label>
+              <Input
+                type="number"
+                min={1}
+                max={20}
+                value={settings.simultaneousStaff.night}
+                onChange={(e) =>
+                  setSettings({
+                    ...settings,
+                    simultaneousStaff: {
+                      ...settings.simultaneousStaff,
+                      night: parseInt(e.target.value) || 1,
+                    },
+                  })
+                }
+              />
+              <p className="text-xs text-gray-500">22:30 - 07:30</p>
+            </div>
           </div>
-          <div className="space-y-2">
-            <Label>Evening 근무</Label>
-            <Input
-              type="number"
-              min={1}
-              max={20}
-              value={settings.simultaneousStaff.evening}
-              onChange={(e) =>
-                setSettings({
-                  ...settings,
-                  simultaneousStaff: {
-                    ...settings.simultaneousStaff,
-                    evening: parseInt(e.target.value) || 1,
-                  },
-                })
-              }
-            />
-            <p className="text-xs text-gray-500">15:00 - 23:00</p>
-          </div>
-          <div className="space-y-2">
-            <Label>Night 근무</Label>
-            <Input
-              type="number"
-              min={1}
-              max={20}
-              value={settings.simultaneousStaff.night}
-              onChange={(e) =>
-                setSettings({
-                  ...settings,
-                  simultaneousStaff: {
-                    ...settings.simultaneousStaff,
-                    night: parseInt(e.target.value) || 1,
-                  },
-                })
-              }
-            />
-            <p className="text-xs text-gray-500">22:30 - 07:30</p>
+
+          <div className="border-t pt-6">
+            <div className="grid gap-6 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label>월별 휴무일 수</Label>
+                <Input
+                  type="number"
+                  min={4}
+                  max={15}
+                  value={settings.monthlyOffDays}
+                  onChange={(e) =>
+                    setSettings({
+                      ...settings,
+                      monthlyOffDays: parseInt(e.target.value) || 8,
+                    })
+                  }
+                />
+              </div>
+              <div className="flex items-end">
+                <div className="w-full rounded-lg bg-blue-50 border border-blue-200 px-4 py-3">
+                  <p className="text-xs text-blue-600 mb-1">권장 간호사 수</p>
+                  <p className="text-2xl font-bold text-blue-700">
+                    {Math.ceil(
+                      (settings.simultaneousStaff.day +
+                        settings.simultaneousStaff.evening +
+                        settings.simultaneousStaff.night +
+                        1) *
+                        30 /
+                        (30 - settings.monthlyOffDays)
+                    )}명
+                  </p>
+                  <p className="text-xs text-blue-500 mt-1">
+                    (D{settings.simultaneousStaff.day} + E{settings.simultaneousStaff.evening} + N{settings.simultaneousStaff.night} + C1) × 30 ÷ (30 − 휴무{settings.monthlyOffDays})
+                  </p>
+                </div>
+              </div>
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -200,31 +240,6 @@ export default function SettingsPage() {
               }
             />
             <p className="text-xs text-gray-500">Night와 Charge 근무에 동일하게 적용</p>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* 휴무 및 휴식 */}
-      <Card>
-        <CardHeader>
-          <CardTitle>휴무 및 휴식</CardTitle>
-          <CardDescription>적절한 휴식을 보장합니다.</CardDescription>
-        </CardHeader>
-        <CardContent className="grid gap-6 sm:grid-cols-2">
-          <div className="space-y-2">
-            <Label>월별 휴무일 수</Label>
-            <Input
-              type="number"
-              min={4}
-              max={15}
-              value={settings.monthlyOffDays}
-              onChange={(e) =>
-                setSettings({
-                  ...settings,
-                  monthlyOffDays: parseInt(e.target.value) || 8,
-                })
-              }
-            />
           </div>
         </CardContent>
       </Card>
