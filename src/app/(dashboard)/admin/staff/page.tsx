@@ -537,6 +537,11 @@ export default function StaffPage() {
                 {member.personalRules.dedicatedRole === 'charge' && (
                   <span className="text-xs px-1.5 py-0.5 bg-red-100 text-red-700 rounded whitespace-nowrap">C전담</span>
                 )}
+                {member.personalRules.selectedShiftsOnly && (
+                  <span className="text-xs px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded whitespace-nowrap">
+                    {member.personalRules.selectedShiftsOnly.map((s) => s.charAt(0).toUpperCase()).join('+')}
+                  </span>
+                )}
               </div>
               {!removeMode && (
                 <div className="flex gap-1 shrink-0 ml-2">
@@ -595,6 +600,7 @@ export default function StaffPage() {
               <Label>전담 역할</Label>
               <Select
                 value={dedicatedRole || 'none'}
+                disabled={!!selectedShiftsOnly}
                 onValueChange={(v) => setDedicatedRole(v === 'none' ? null : (v as DedicatedRole))}
               >
                 <SelectTrigger>
@@ -607,13 +613,16 @@ export default function StaffPage() {
                 </SelectContent>
               </Select>
               <p className="text-xs text-gray-500">
-                전담 인원은 공평성 규칙에서 제외됩니다.
+                {selectedShiftsOnly
+                  ? '선택 근무제와 동시에 설정할 수 없습니다.'
+                  : '전담 인원은 공평성 규칙에서 제외됩니다.'}
               </p>
             </div>
             <div className="space-y-2">
               <Label>선택 근무제</Label>
               <Select
                 value={selectedShiftsOnly ? selectedShiftsOnly.join(',') : 'all'}
+                disabled={!!dedicatedRole}
                 onValueChange={(v) => {
                   if (v === 'all') {
                     setSelectedShiftsOnly(null)
@@ -632,6 +641,9 @@ export default function StaffPage() {
                   <SelectItem value="evening,night">Evening + Night만</SelectItem>
                 </SelectContent>
               </Select>
+              {dedicatedRole && (
+                <p className="text-xs text-gray-500">전담 역할과 동시에 설정할 수 없습니다.</p>
+              )}
             </div>
           </div>
           <DialogFooter>
