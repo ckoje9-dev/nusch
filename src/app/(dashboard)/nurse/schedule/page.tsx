@@ -11,7 +11,6 @@ import {
   Calendar,
   ChevronLeft,
   ChevronRight,
-  AlertTriangle,
 } from 'lucide-react'
 import { cn, getKoreanDayName, isWeekend } from '@/lib/utils'
 import type { Schedule, User, ShiftType } from '@/types'
@@ -53,7 +52,7 @@ export default function NurseSchedulePage() {
     const now = new Date()
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
   })
-  const [filterNurseId, setFilterNurseId] = useState<string>('all')
+  const [filterNurseId, setFilterNurseId] = useState<string>(userData?.id || 'all')
   const [showMonthPicker, setShowMonthPicker] = useState(false)
 
   const loadData = async () => {
@@ -333,7 +332,6 @@ export default function NurseSchedulePage() {
 
                   days.forEach((d) => {
                     const assignment = schedule.assignments[d.dateStr]
-                    const dayViolations = schedule.violations.filter((v) => v.date === d.dateStr)
                     const dayOfWeek = d.date.getDay()
                     const isSunday = dayOfWeek === 0
                     const isSaturday = dayOfWeek === 6
@@ -369,23 +367,6 @@ export default function NurseSchedulePage() {
                           >
                             {d.day}
                           </span>
-                          {dayViolations.length > 0 && (
-                            <div className="relative group">
-                              <AlertTriangle className="h-3.5 w-3.5 text-yellow-500 cursor-pointer" />
-                              <div className="absolute right-0 top-full mt-1 hidden group-hover:block z-50">
-                                <div className="bg-gray-900 text-white text-xs rounded px-2 py-1.5 whitespace-nowrap shadow-lg max-w-[250px]">
-                                  {dayViolations.map((v, i) => {
-                                    const nurse = staff.find((s) => s.id === v.userId)
-                                    return (
-                                      <div key={i} className="py-0.5">
-                                        <span className="font-medium">{nurse?.name}</span>: {v.reason}
-                                      </div>
-                                    )
-                                  })}
-                                </div>
-                              </div>
-                            </div>
-                          )}
                         </div>
 
                         {/* Shift assignments */}
