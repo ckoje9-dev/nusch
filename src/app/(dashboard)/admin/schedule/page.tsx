@@ -28,6 +28,8 @@ import {
   AlertTriangle,
   CheckCircle,
   Copy,
+  ArrowUp,
+  ArrowDown,
 } from 'lucide-react'
 import { cn, getKoreanDayName, isWeekend } from '@/lib/utils'
 import type { Schedule, Organization, User, ShiftType, SHIFT_LABELS } from '@/types'
@@ -62,6 +64,8 @@ export default function SchedulePage() {
   })
   const [filterNurseId, setFilterNurseId] = useState<string>('all')
   const [showMonthPicker, setShowMonthPicker] = useState(false)
+  const [statsSortKey, setStatsSortKey] = useState<string>('fairness')
+  const [statsSortDir, setStatsSortDir] = useState<'asc' | 'desc'>('desc')
 
   const loadData = async () => {
     if (!userData?.organizationId) return
@@ -333,7 +337,7 @@ export default function SchedulePage() {
                     className="text-sm border border-gray-300 rounded-md px-3 py-1.5 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   >
                     <option value="all">전체 보기</option>
-                    {staff.map((nurse) => (
+                    {[...staff].sort((a, b) => a.name.localeCompare(b.name, 'ko')).map((nurse) => (
                       <option key={nurse.id} value={nurse.id}>
                         {nurse.name}
                       </option>
@@ -551,70 +555,149 @@ export default function SchedulePage() {
                 </CardHeader>
                 <CardContent>
                   <div className="overflow-x-auto">
-                    <table className="w-full">
-                      <thead>
-                        <tr className="border-b">
-                          <th className="text-left p-2">이름</th>
-                          <th className="text-right p-2">총 시간</th>
-                          <th className="text-right p-2">가중 시간</th>
-                          <th className="text-right p-2">Charge</th>
-                          <th className="text-right p-2">공평성</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {/* Non-dedicated nurses (ranked by fairness) */}
-                        {ranking.map((r) => {
-                          const nurse = staff.find((s) => s.id === r.userId)
-                          const stats = schedule.statistics[r.userId]
-                          return (
-                            <tr key={r.userId} className="border-b">
-                              <td className="p-2">{nurse?.name}</td>
-                              <td className="text-right p-2">{stats?.totalHours || 0}h</td>
-                              <td className="text-right p-2">{stats?.weightedHours.toFixed(1) || 0}</td>
-                              <td className="text-right p-2">{stats?.chargeCount || 0}회</td>
-                              <td className="text-right p-2">
-                                <span
-                                  className={cn(
-                                    'px-2 py-1 rounded text-sm',
-                                    r.fairnessScore >= 80
-                                      ? 'bg-green-100 text-green-700'
-                                      : r.fairnessScore >= 60
-                                      ? 'bg-yellow-100 text-yellow-700'
-                                      : 'bg-red-100 text-red-700'
-                                  )}
-                                >
-                                  {r.fairnessScore}
-                                </span>
-                              </td>
+                    {(() => {
+                      const toggleSort = (key: string) => {
+                        if (statsSortKey === key) {
+                          setStatsSortDir(statsSortDir === 'asc' ? 'desc' : 'asc')
+                        } else {
+                          setStatsSortKey(key)
+                          setStatsSortDir(key === 'name' ? 'asc' : 'desc')
+                        }
+                      }
+
+                      const SortIcon = ({ col }: { col: string }) => {
+                        if (statsSortKey !== col) return null
+                        return statsSortDir === 'asc'
+                          ? <ArrowUp className="inline h-3 w-3 ml-0.5" />
+                          : <ArrowDown className="inline h-3 w-3 ml-0.5" />
+                      }
+
+                      // Calculate average weighted hours for non-dedicated nurses
+                      const nonDedicatedStaff = staff.filter((n) => !n.personalRules.dedicatedRole)
+                      const avgWeightedHours = nonDedicatedStaff.length > 0
+                        ? nonDedicatedStaff.reduce((sum, n) => sum + (schedule.statistics[n.id]?.weightedHours || 0), 0) / nonDedicatedStaff.length
+                        : 0
+
+                      // Build all nurse rows with stats
+                      const allRows = staff.map((nurse) => {
+                        const stats = schedule.statistics[nurse.id]
+                        const rankItem = ranking.find((r) => r.userId === nurse.id)
+                        const isDedicated = !!nurse.personalRules.dedicatedRole
+                        const workDays = (stats?.dayCount || 0) + (stats?.eveningCount || 0) + (stats?.nightCount || 0) + (stats?.chargeCount || 0)
+                        return {
+                          nurse,
+                          stats,
+                          isDedicated,
+                          workDays,
+                          fairnessScore: rankItem?.fairnessScore ?? -1,
+                        }
+                      })
+
+                      // Sort
+                      const sorted = [...allRows].sort((a, b) => {
+                        const dir = statsSortDir === 'asc' ? 1 : -1
+                        switch (statsSortKey) {
+                          case 'name': return dir * a.nurse.name.localeCompare(b.nurse.name, 'ko')
+                          case 'totalHours': return dir * ((a.stats?.totalHours || 0) - (b.stats?.totalHours || 0))
+                          case 'weightedHours': return dir * ((a.stats?.weightedHours || 0) - (b.stats?.weightedHours || 0))
+                          case 'workDays': return dir * (a.workDays - b.workDays)
+                          case 'day': return dir * ((a.stats?.dayCount || 0) - (b.stats?.dayCount || 0))
+                          case 'evening': return dir * ((a.stats?.eveningCount || 0) - (b.stats?.eveningCount || 0))
+                          case 'night': return dir * ((a.stats?.nightCount || 0) - (b.stats?.nightCount || 0))
+                          case 'charge': return dir * ((a.stats?.chargeCount || 0) - (b.stats?.chargeCount || 0))
+                          case 'off': return dir * ((a.stats?.offCount || 0) - (b.stats?.offCount || 0))
+                          case 'fairness': {
+                            // Sort by distance from average (absolute deviation)
+                            const da = a.isDedicated ? Infinity : Math.abs((a.stats?.weightedHours || 0) - avgWeightedHours)
+                            const db = b.isDedicated ? Infinity : Math.abs((b.stats?.weightedHours || 0) - avgWeightedHours)
+                            return dir * (da - db)
+                          }
+                          default: return 0
+                        }
+                      })
+
+                      const thClass = 'text-right p-2 cursor-pointer hover:bg-gray-50 select-none whitespace-nowrap'
+
+                      return (
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="border-b">
+                              <th className="text-left p-2 cursor-pointer hover:bg-gray-50 select-none" onClick={() => toggleSort('name')}>
+                                이름<SortIcon col="name" />
+                              </th>
+                              <th className={thClass} onClick={() => toggleSort('workDays')}>
+                                근무일수<SortIcon col="workDays" />
+                              </th>
+                              <th className={thClass} onClick={() => toggleSort('day')}>
+                                Day<SortIcon col="day" />
+                              </th>
+                              <th className={thClass} onClick={() => toggleSort('evening')}>
+                                Evening<SortIcon col="evening" />
+                              </th>
+                              <th className={thClass} onClick={() => toggleSort('night')}>
+                                Night<SortIcon col="night" />
+                              </th>
+                              <th className={thClass} onClick={() => toggleSort('charge')}>
+                                Charge<SortIcon col="charge" />
+                              </th>
+                              <th className={thClass} onClick={() => toggleSort('off')}>
+                                Off<SortIcon col="off" />
+                              </th>
+                              <th className={thClass} onClick={() => toggleSort('totalHours')}>
+                                실제 근무 시간<SortIcon col="totalHours" />
+                              </th>
+                              <th className={thClass} onClick={() => toggleSort('weightedHours')}>
+                                가중 시간<SortIcon col="weightedHours" />
+                              </th>
+                              <th className={thClass} onClick={() => toggleSort('fairness')}>
+                                근무 부담<SortIcon col="fairness" />
+                              </th>
                             </tr>
-                          )
-                        })}
-                        {/* Dedicated nurses (excluded from fairness) */}
-                        {staff
-                          .filter((n) => n.personalRules.dedicatedRole)
-                          .map((nurse) => {
-                            const stats = schedule.statistics[nurse.id]
-                            if (!stats) return null
-                            const roleLabel = nurse.personalRules.dedicatedRole === 'night' ? 'Night 전담' : 'Charge 전담'
-                            return (
-                              <tr key={nurse.id} className="border-b bg-gray-50">
-                                <td className="p-2">
-                                  {nurse.name}
-                                  <span className="ml-1 text-xs text-gray-400">({roleLabel})</span>
-                                </td>
-                                <td className="text-right p-2">{stats.totalHours || 0}h</td>
-                                <td className="text-right p-2">{stats.weightedHours.toFixed(1)}</td>
-                                <td className="text-right p-2">{stats.chargeCount || 0}회</td>
-                                <td className="text-right p-2">
-                                  <span className="px-2 py-1 rounded text-sm bg-gray-100 text-gray-500">
-                                    제외
-                                  </span>
-                                </td>
-                              </tr>
-                            )
-                          })}
-                      </tbody>
-                    </table>
+                          </thead>
+                          <tbody>
+                            {sorted.map(({ nurse, stats, isDedicated, workDays, fairnessScore }) => {
+                              const roleLabel = nurse.personalRules.dedicatedRole === 'night' ? 'Night 전담' : nurse.personalRules.dedicatedRole === 'charge' ? 'Charge 전담' : null
+                              return (
+                                <tr key={nurse.id} className={cn('border-b', isDedicated && 'bg-gray-50')}>
+                                  <td className="p-2">
+                                    {nurse.name}
+                                    {roleLabel && <span className="ml-1 text-xs text-gray-400">({roleLabel})</span>}
+                                  </td>
+                                  <td className="text-right p-2 font-medium">{workDays}</td>
+                                  <td className="text-right p-2">{stats?.dayCount || 0}</td>
+                                  <td className="text-right p-2">{stats?.eveningCount || 0}</td>
+                                  <td className="text-right p-2">{stats?.nightCount || 0}</td>
+                                  <td className="text-right p-2">{stats?.chargeCount || 0}</td>
+                                  <td className="text-right p-2">{stats?.offCount || 0}</td>
+                                  <td className="text-right p-2">{stats?.totalHours || 0}h</td>
+                                  <td className="text-right p-2">{stats?.weightedHours.toFixed(1) || 0}</td>
+                                  <td className="text-right p-2">
+                                    {isDedicated ? (
+                                      <span className="px-2 py-1 rounded text-sm bg-gray-100 text-gray-500">제외</span>
+                                    ) : (() => {
+                                      const wh = stats?.weightedHours || 0
+                                      const diff = avgWeightedHours > 0 ? (wh - avgWeightedHours) / avgWeightedHours : 0
+                                      // within 5% of average → 적당, above → 과중, below → 경미
+                                      const label = diff > 0.05 ? '과중' : diff < -0.05 ? '경미' : '적당'
+                                      const colorClass = diff > 0.05
+                                        ? 'bg-red-100 text-red-700'
+                                        : diff < -0.05
+                                        ? 'bg-yellow-100 text-yellow-700'
+                                        : 'bg-green-100 text-green-700'
+                                      return (
+                                        <span className={cn('px-2 py-1 rounded text-sm', colorClass)}>
+                                          {label}
+                                        </span>
+                                      )
+                                    })()}
+                                  </td>
+                                </tr>
+                              )
+                            })}
+                          </tbody>
+                        </table>
+                      )
+                    })()}
                   </div>
                 </CardContent>
               </Card>

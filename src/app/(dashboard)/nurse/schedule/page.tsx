@@ -295,7 +295,7 @@ export default function NurseSchedulePage() {
                   className="text-sm border border-gray-300 rounded-md px-3 py-1.5 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 >
                   <option value="all">전체 보기</option>
-                  {staff.map((nurse) => (
+                  {[...staff].sort((a, b) => a.name.localeCompare(b.name, 'ko')).map((nurse) => (
                     <option key={nurse.id} value={nurse.id}>
                       {nurse.name}
                     </option>

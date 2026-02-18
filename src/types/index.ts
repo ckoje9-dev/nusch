@@ -101,7 +101,11 @@ export interface DailyAssignment {
 export interface UserStatistics {
   totalHours: number;
   weightedHours: number;
+  dayCount: number;
+  eveningCount: number;
+  nightCount: number;
   chargeCount: number;
+  offCount: number;
   fairnessScore: number;
 }
 

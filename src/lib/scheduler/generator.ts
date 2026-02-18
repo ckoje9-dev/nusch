@@ -259,11 +259,16 @@ function generateScheduleOnce(ctx: SchedulerContext): Schedule {
   nurses.forEach((nurse) => {
     const score = nurseScores.get(nurse.id)!
     const totalHours = calculateTotalHours(nurse.id, assignments, days)
+    const shiftCounts = calculateShiftCounts(nurse.id, assignments, days)
     const isDedicated = !!nurse.personalRules.dedicatedRole
     statistics[nurse.id] = {
       totalHours,
       weightedHours: score.weightedHours,
+      dayCount: shiftCounts.day,
+      eveningCount: shiftCounts.evening,
+      nightCount: shiftCounts.night,
       chargeCount: score.chargeCount,
+      offCount: shiftCounts.off,
       fairnessScore: isDedicated ? -1 : calculateFairnessScore(score.weightedHours, nonDedicatedScores),
     }
   })
@@ -472,4 +477,22 @@ function calculateTotalHours(
     }
   })
   return total
+}
+
+function calculateShiftCounts(
+  nurseId: string,
+  assignments: Record<string, DailyAssignment>,
+  allDays: Date[]
+): Record<ShiftType, number> {
+  const counts: Record<ShiftType, number> = { day: 0, evening: 0, night: 0, charge: 0, off: 0 }
+  allDays.forEach((date) => {
+    const dateStr = formatDate(date)
+    const dayAssignment = assignments[dateStr]
+    for (const [shiftType, nurseIds] of Object.entries(dayAssignment)) {
+      if ((nurseIds as string[]).includes(nurseId)) {
+        counts[shiftType as ShiftType]++
+      }
+    }
+  })
+  return counts
 }
