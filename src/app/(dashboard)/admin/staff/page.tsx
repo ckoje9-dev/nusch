@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
@@ -29,7 +29,7 @@ import {
   updateUser,
 } from '@/lib/firebase/firestore'
 import { useToast } from '@/hooks/use-toast'
-import { Loader2, Plus, Pencil, Trash2, User, UserPlus, Check } from 'lucide-react'
+import { Loader2, Plus, Pencil, Trash2, User, UserPlus, Check, ArrowUpDown, Search } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { User as UserType, DedicatedRole, ShiftType } from '@/types'
 
@@ -51,6 +51,10 @@ export default function StaffPage() {
   const [removeMode, setRemoveMode] = useState(false)
   const [selectedRemoveIds, setSelectedRemoveIds] = useState<Set<string>>(new Set())
   const [removing, setRemoving] = useState(false)
+
+  // Sort & Search state
+  const [sortBy, setSortBy] = useState<'name' | 'email' | 'years'>('name')
+  const [searchQuery, setSearchQuery] = useState('')
 
   // Edit form states
   const [name, setName] = useState('')
@@ -356,6 +360,38 @@ export default function StaffPage() {
         </DialogContent>
       </Dialog>
 
+      {/* Summary */}
+      {staff.length > 0 && (
+        <Card>
+          <CardContent className="py-4">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
+              <div>
+                <p className="text-2xl font-bold text-blue-600">{staff.length}</p>
+                <p className="text-sm text-gray-500">총 인원</p>
+              </div>
+              <div>
+                <p className="text-2xl font-bold text-indigo-600">
+                  {staff.filter((s) => s.personalRules.dedicatedRole === 'night').length}
+                </p>
+                <p className="text-sm text-gray-500">Night 전담</p>
+              </div>
+              <div>
+                <p className="text-2xl font-bold text-red-600">
+                  {staff.filter((s) => s.personalRules.dedicatedRole === 'charge').length}
+                </p>
+                <p className="text-sm text-gray-500">Charge 전담</p>
+              </div>
+              <div>
+                <p className="text-2xl font-bold text-gray-600">
+                  {(staff.reduce((sum, s) => sum + s.yearsOfExperience, 0) / staff.length).toFixed(1)}
+                </p>
+                <p className="text-sm text-gray-500">평균 연차</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Staff List */}
       {staff.length === 0 ? (
         <Card>
@@ -369,9 +405,9 @@ export default function StaffPage() {
           </CardContent>
         </Card>
       ) : (
-        <div className="space-y-4">
-          {/* Remove mode controls */}
-          {removeMode && (
+        <div className="space-y-3">
+          {/* Sort buttons & Remove mode controls */}
+          {removeMode ? (
             <div className="flex items-center justify-between bg-red-50 border border-red-200 rounded-lg px-4 py-3">
               <div className="flex items-center gap-3">
                 <button
@@ -418,86 +454,114 @@ export default function StaffPage() {
                 </Button>
               </div>
             </div>
+          ) : (
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <ArrowUpDown className="h-4 w-4 text-gray-400" />
+                {([
+                  { key: 'name' as const, label: '이름순' },
+                  { key: 'email' as const, label: '계정순' },
+                  { key: 'years' as const, label: '연차순' },
+                ]).map(({ key, label }) => (
+                  <Button
+                    key={key}
+                    variant={sortBy === key ? 'default' : 'outline'}
+                    size="sm"
+                    onClick={() => setSortBy(key)}
+                  >
+                    {label}
+                  </Button>
+                ))}
+              </div>
+              <div className="relative">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                <Input
+                  placeholder="이름, 계정 검색"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-8 w-[180px] h-9"
+                />
+              </div>
+            </div>
           )}
 
-          {staff.map((member) => (
-            <Card key={member.id}>
-              <CardContent className="flex items-center justify-between p-4">
-                <div className="flex items-center gap-4">
-                  {removeMode ? (
-                    <button
-                      type="button"
-                      onClick={() => toggleRemoveSelection(member.id)}
-                      className={cn(
-                        'h-5 w-5 rounded border-2 flex items-center justify-center shrink-0 transition-colors',
-                        selectedRemoveIds.has(member.id)
-                          ? 'border-red-500 bg-red-500'
-                          : 'border-gray-300'
-                      )}
-                    >
-                      {selectedRemoveIds.has(member.id) && (
-                        <Check className="h-3 w-3 text-white" />
-                      )}
-                    </button>
-                  ) : (
-                    <div className="h-10 w-10 rounded-full bg-blue-100 flex items-center justify-center">
-                      <span className="text-blue-600 font-semibold">
-                        {member.name.charAt(0)}
-                      </span>
-                    </div>
-                  )}
-                  <div>
-                    <p className="font-semibold">{member.name}</p>
-                    <p className="text-sm text-gray-500">
-                      {member.yearsOfExperience}년차 · {member.email}
-                    </p>
-                    <div className="flex gap-2 mt-1">
-                      {member.personalRules.dedicatedRole === 'night' && (
-                        <span className="text-xs px-2 py-0.5 bg-indigo-100 text-indigo-700 rounded">
-                          Night 전담
-                        </span>
-                      )}
-                      {member.personalRules.dedicatedRole === 'charge' && (
-                        <span className="text-xs px-2 py-0.5 bg-red-100 text-red-700 rounded">
-                          Charge 전담
-                        </span>
-                      )}
-                      {member.personalRules.selectedShiftsOnly && (
-                        <span className="text-xs px-2 py-0.5 bg-amber-100 text-amber-700 rounded">
-                          선택근무제
-                        </span>
-                      )}
-                      {member.personalRules.vacationDates.length > 0 && (
-                        <span className="text-xs px-2 py-0.5 bg-green-100 text-green-700 rounded">
-                          휴가 {member.personalRules.vacationDates.length}일
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </div>
-                {!removeMode && (
-                  <div className="flex gap-2">
-                    <Button
-                      variant="outline"
-                      size="icon"
-                      onClick={() => openEditDialog(member)}
-                    >
-                      <Pencil className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="icon"
-                      onClick={() => {
-                        setRemoveMode(true)
-                        setSelectedRemoveIds(new Set([member.id]))
-                      }}
-                    >
-                      <Trash2 className="h-4 w-4 text-red-500" />
-                    </Button>
+          {/* Staff rows */}
+          {[...staff]
+            .filter((s) => {
+              if (!searchQuery.trim()) return true
+              const q = searchQuery.trim().toLowerCase()
+              return s.name.toLowerCase().includes(q) || s.email.toLowerCase().includes(q)
+            })
+            .sort((a, b) => {
+              if (sortBy === 'name') return a.name.localeCompare(b.name, 'ko')
+              if (sortBy === 'email') return a.email.localeCompare(b.email)
+              return b.yearsOfExperience - a.yearsOfExperience
+            })
+            .map((member) => (
+            <div
+              key={member.id}
+              className="flex items-center justify-between border rounded-lg px-4 py-3 bg-white hover:bg-gray-50 transition-colors"
+            >
+              <div className="flex items-center gap-3 min-w-0">
+                {removeMode ? (
+                  <button
+                    type="button"
+                    onClick={() => toggleRemoveSelection(member.id)}
+                    className={cn(
+                      'h-5 w-5 rounded border-2 flex items-center justify-center shrink-0 transition-colors',
+                      selectedRemoveIds.has(member.id)
+                        ? 'border-red-500 bg-red-500'
+                        : 'border-gray-300'
+                    )}
+                  >
+                    {selectedRemoveIds.has(member.id) && (
+                      <Check className="h-3 w-3 text-white" />
+                    )}
+                  </button>
+                ) : (
+                  <div className="h-8 w-8 rounded-full bg-blue-100 flex items-center justify-center shrink-0">
+                    <span className="text-blue-600 font-semibold text-sm">
+                      {member.name.charAt(0)}
+                    </span>
                   </div>
                 )}
-              </CardContent>
-            </Card>
+                <span className="font-medium text-sm whitespace-nowrap">{member.name}</span>
+                <span className="text-sm text-gray-400 hidden sm:inline">·</span>
+                <span className="text-sm text-gray-500 truncate hidden sm:inline">{member.email}</span>
+                <span className="text-sm text-gray-400 hidden sm:inline">·</span>
+                <span className="text-sm text-gray-500 whitespace-nowrap hidden sm:inline">{member.yearsOfExperience}년차</span>
+                {/* Tags */}
+                {member.personalRules.dedicatedRole === 'night' && (
+                  <span className="text-xs px-1.5 py-0.5 bg-indigo-100 text-indigo-700 rounded whitespace-nowrap">N전담</span>
+                )}
+                {member.personalRules.dedicatedRole === 'charge' && (
+                  <span className="text-xs px-1.5 py-0.5 bg-red-100 text-red-700 rounded whitespace-nowrap">C전담</span>
+                )}
+              </div>
+              {!removeMode && (
+                <div className="flex gap-1 shrink-0 ml-2">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8"
+                    onClick={() => openEditDialog(member)}
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8"
+                    onClick={() => {
+                      setRemoveMode(true)
+                      setSelectedRemoveIds(new Set([member.id]))
+                    }}
+                  >
+                    <Trash2 className="h-3.5 w-3.5 text-red-500" />
+                  </Button>
+                </div>
+              )}
+            </div>
           ))}
         </div>
       )}
@@ -579,40 +643,6 @@ export default function StaffPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Summary */}
-      {staff.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>요약</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
-              <div>
-                <p className="text-2xl font-bold text-blue-600">{staff.length}</p>
-                <p className="text-sm text-gray-500">총 인원</p>
-              </div>
-              <div>
-                <p className="text-2xl font-bold text-indigo-600">
-                  {staff.filter((s) => s.personalRules.dedicatedRole === 'night').length}
-                </p>
-                <p className="text-sm text-gray-500">Night 전담</p>
-              </div>
-              <div>
-                <p className="text-2xl font-bold text-red-600">
-                  {staff.filter((s) => s.personalRules.dedicatedRole === 'charge').length}
-                </p>
-                <p className="text-sm text-gray-500">Charge 전담</p>
-              </div>
-              <div>
-                <p className="text-2xl font-bold text-gray-600">
-                  {(staff.reduce((sum, s) => sum + s.yearsOfExperience, 0) / staff.length).toFixed(1)}
-                </p>
-                <p className="text-sm text-gray-500">평균 연차</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
     </div>
   )
 }
