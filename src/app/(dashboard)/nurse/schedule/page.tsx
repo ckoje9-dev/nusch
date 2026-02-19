@@ -13,6 +13,7 @@ import {
   ChevronRight,
 } from 'lucide-react'
 import { cn, getKoreanDayName, isWeekend } from '@/lib/utils'
+import { fetchHolidaysByYear } from '@/lib/scheduler/holidays'
 import type { Schedule, User, ShiftType } from '@/types'
 import { SHIFT_TIMES } from '@/types'
 import { requestCalendarAccess, syncToGoogleCalendar } from '@/lib/google-calendar'
@@ -54,6 +55,7 @@ export default function NurseSchedulePage() {
   })
   const [filterNurseId, setFilterNurseId] = useState<string>(userData?.id || 'all')
   const [showMonthPicker, setShowMonthPicker] = useState(false)
+  const [holidayMap, setHolidayMap] = useState<Record<string, string>>({})
 
   const loadData = async () => {
     if (!userData?.organizationId) return
@@ -77,6 +79,11 @@ export default function NurseSchedulePage() {
   useEffect(() => {
     loadData()
   }, [userData?.organizationId, currentMonth])
+
+  useEffect(() => {
+    const [year] = currentMonth.split('-').map(Number)
+    fetchHolidaysByYear(year).then(setHolidayMap)
+  }, [currentMonth])
 
   const prevMonth = () => {
     const [year, month] = currentMonth.split('-').map(Number)
@@ -152,12 +159,14 @@ export default function NurseSchedulePage() {
   const daysInMonth = new Date(year, month, 0).getDate()
   const days = Array.from({ length: daysInMonth }, (_, i) => {
     const date = new Date(year, month - 1, i + 1)
+    const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(i + 1).padStart(2, '0')}`
     return {
       date,
-      dateStr: `${year}-${String(month).padStart(2, '0')}-${String(i + 1).padStart(2, '0')}`,
+      dateStr,
       day: i + 1,
       dayName: getKoreanDayName(date),
       isWeekend: isWeekend(date),
+      holidayName: holidayMap[dateStr] ?? null,
     }
   })
 
@@ -352,21 +361,28 @@ export default function NurseSchedulePage() {
                         key={d.dateStr}
                         className={cn(
                           'min-h-[120px] border-b border-r p-1 relative',
-                          d.isWeekend ? 'bg-gray-50/80' : 'bg-white'
+                          d.holidayName ? 'bg-red-50/60' : d.isWeekend ? 'bg-gray-50/80' : 'bg-white'
                         )}
                       >
                         {/* Date number */}
                         <div className="flex items-center justify-between mb-1">
-                          <span
-                            className={cn(
-                              'text-sm font-medium w-6 h-6 flex items-center justify-center rounded-full',
-                              isSunday && 'text-red-500',
-                              isSaturday && 'text-blue-500',
-                              !isSunday && !isSaturday && 'text-gray-700'
+                          <div className="flex items-center gap-1">
+                            <span
+                              className={cn(
+                                'text-sm font-medium w-6 h-6 flex items-center justify-center rounded-full',
+                                (isSunday || d.holidayName) && 'text-red-500',
+                                isSaturday && !d.holidayName && 'text-blue-500',
+                                !isSunday && !isSaturday && !d.holidayName && 'text-gray-700'
+                              )}
+                            >
+                              {d.day}
+                            </span>
+                            {d.holidayName && (
+                              <span className="text-[10px] text-red-400 font-medium leading-tight hidden sm:block truncate max-w-[60px]">
+                                {d.holidayName}
+                              </span>
                             )}
-                          >
-                            {d.day}
-                          </span>
+                          </div>
                         </div>
 
                         {/* Shift assignments */}

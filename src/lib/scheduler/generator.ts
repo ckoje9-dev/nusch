@@ -10,7 +10,6 @@ import {
   WEIGHTS,
 } from '@/types'
 import { isWeekend, getDaysInMonth, formatDate } from '@/lib/utils'
-import { isHoliday } from './holidays'
 import { validateAssignment, ValidationResult } from './validator'
 import { calculateFairnessScore, calculateOverallFairness } from './fairness'
 

@@ -15,15 +15,13 @@ import {
 } from '@/lib/firebase/firestore'
 import { generateSchedule } from '@/lib/scheduler/generator'
 import { calculateOverallFairness, rankByFairness } from '@/lib/scheduler/fairness'
-import { getHolidaysInMonth } from '@/lib/scheduler/holidays'
+import { fetchHolidaysByYear, getHolidaysInMonthFromMap } from '@/lib/scheduler/holidays'
 import { useToast } from '@/hooks/use-toast'
 import {
   Loader2,
   Calendar,
   ChevronLeft,
   ChevronRight,
-  Share2,
-  Download,
   Wand2,
   AlertTriangle,
   CheckCircle,
@@ -32,7 +30,7 @@ import {
   ArrowDown,
 } from 'lucide-react'
 import { cn, getKoreanDayName, isWeekend } from '@/lib/utils'
-import type { Schedule, Organization, User, ShiftType, SHIFT_LABELS } from '@/types'
+import type { Schedule, Organization, User, ShiftType } from '@/types'
 
 const SHIFT_COLORS: Record<ShiftType, string> = {
   day: 'bg-blue-100 text-blue-800',
@@ -66,6 +64,7 @@ export default function SchedulePage() {
   const [showMonthPicker, setShowMonthPicker] = useState(false)
   const [statsSortKey, setStatsSortKey] = useState<string>('fairness')
   const [statsSortDir, setStatsSortDir] = useState<'asc' | 'desc'>('desc')
+  const [holidayMap, setHolidayMap] = useState<Record<string, string>>({})
 
   const loadData = async () => {
     if (!userData?.organizationId) return
@@ -92,6 +91,11 @@ export default function SchedulePage() {
     loadData()
   }, [userData?.organizationId, currentMonth])
 
+  useEffect(() => {
+    const [year] = currentMonth.split('-').map(Number)
+    fetchHolidaysByYear(year).then(setHolidayMap)
+  }, [currentMonth])
+
   const handleGenerate = async () => {
     if (!organization || staff.length === 0) {
       toast({
@@ -105,7 +109,7 @@ export default function SchedulePage() {
     setGenerating(true)
     try {
       const [year, month] = currentMonth.split('-').map(Number)
-      const holidays = getHolidaysInMonth(year, month).map((h) => h.date)
+      const holidays = getHolidaysInMonthFromMap(holidayMap, year, month).map((h) => h.date)
 
       const newSchedule = generateSchedule({
         organization,
@@ -190,12 +194,14 @@ export default function SchedulePage() {
   const daysInMonth = new Date(year, month, 0).getDate()
   const days = Array.from({ length: daysInMonth }, (_, i) => {
     const date = new Date(year, month - 1, i + 1)
+    const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(i + 1).padStart(2, '0')}`
     return {
       date,
-      dateStr: `${year}-${String(month).padStart(2, '0')}-${String(i + 1).padStart(2, '0')}`,
+      dateStr,
       day: i + 1,
       dayName: getKoreanDayName(date),
       isWeekend: isWeekend(date),
+      holidayName: holidayMap[dateStr] ?? null,
     }
   })
 
@@ -396,21 +402,28 @@ export default function SchedulePage() {
                           key={d.dateStr}
                           className={cn(
                             'min-h-[120px] border-b border-r p-1 relative',
-                            d.isWeekend ? 'bg-gray-50/80' : 'bg-white'
+                            d.holidayName ? 'bg-red-50/60' : d.isWeekend ? 'bg-gray-50/80' : 'bg-white'
                           )}
                         >
                           {/* Date number */}
                           <div className="flex items-center justify-between mb-1">
-                            <span
-                              className={cn(
-                                'text-sm font-medium w-6 h-6 flex items-center justify-center rounded-full',
-                                isSunday && 'text-red-500',
-                                isSaturday && 'text-blue-500',
-                                !isSunday && !isSaturday && 'text-gray-700'
+                            <div className="flex items-center gap-1">
+                              <span
+                                className={cn(
+                                  'text-sm font-medium w-6 h-6 flex items-center justify-center rounded-full',
+                                  (isSunday || d.holidayName) && 'text-red-500',
+                                  isSaturday && !d.holidayName && 'text-blue-500',
+                                  !isSunday && !isSaturday && !d.holidayName && 'text-gray-700'
+                                )}
+                              >
+                                {d.day}
+                              </span>
+                              {d.holidayName && (
+                                <span className="text-[10px] text-red-400 font-medium leading-tight hidden sm:block truncate max-w-[60px]">
+                                  {d.holidayName}
+                                </span>
                               )}
-                            >
-                              {d.day}
-                            </span>
+                            </div>
                             {dayViolations.length > 0 && (
                               <div className="relative group">
                                 <AlertTriangle className="h-3.5 w-3.5 text-yellow-500 cursor-pointer" />
@@ -655,7 +668,7 @@ export default function SchedulePage() {
                             </tr>
                           </thead>
                           <tbody>
-                            {sorted.map(({ nurse, stats, isDedicated, workDays, fairnessScore }) => {
+                            {sorted.map(({ nurse, stats, isDedicated, workDays }) => {
                               const roleLabel = nurse.personalRules.dedicatedRole === 'night' ? 'Night 전담' : nurse.personalRules.dedicatedRole === 'charge' ? 'Charge 전담' : null
                               return (
                                 <tr key={nurse.id} className={cn('border-b', isDedicated && 'bg-gray-50')}>

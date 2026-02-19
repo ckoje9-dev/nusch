@@ -1,8 +1,7 @@
 import type { Holiday } from '@/types'
 
-// 한국 공휴일 데이터 (2024-2026)
-// 실제 서비스에서는 API를 사용하거나 관리자가 설정할 수 있도록 해야 함
-const KOREAN_HOLIDAYS: Record<string, string> = {
+// 정적 폴백 데이터 (API 실패 시 사용)
+const FALLBACK_HOLIDAYS: Record<string, string> = {
   // 2024
   '2024-01-01': '신정',
   '2024-02-09': '설날 연휴',
@@ -63,27 +62,52 @@ const KOREAN_HOLIDAYS: Record<string, string> = {
   '2026-12-25': '크리스마스',
 }
 
-export function isHoliday(dateStr: string): boolean {
-  return dateStr in KOREAN_HOLIDAYS
-}
+// 연도별 API 캐시 (세션 중 반복 요청 방지)
+const holidayCache: Record<number, Record<string, string>> = {}
 
-export function getHolidayName(dateStr: string): string | null {
-  return KOREAN_HOLIDAYS[dateStr] || null
-}
+/**
+ * API로 특정 연도의 한국 공휴일을 가져옴
+ * 실패 시 정적 폴백 데이터 사용
+ */
+export async function fetchHolidaysByYear(year: number): Promise<Record<string, string>> {
+  if (holidayCache[year]) return holidayCache[year]
 
-export function getHolidaysInMonth(year: number, month: number): Holiday[] {
-  const holidays: Holiday[] = []
-  const monthStr = `${year}-${String(month).padStart(2, '0')}`
-
-  for (const [date, name] of Object.entries(KOREAN_HOLIDAYS)) {
-    if (date.startsWith(monthStr)) {
-      holidays.push({ date, name })
+  try {
+    const res = await fetch(`/api/holidays?year=${year}`)
+    if (!res.ok) throw new Error('API error')
+    const data: Record<string, string> = await res.json()
+    if (Object.keys(data).length === 0) throw new Error('Empty response')
+    holidayCache[year] = data
+    return data
+  } catch {
+    // 폴백: 정적 데이터에서 해당 연도 필터링
+    const fallback: Record<string, string> = {}
+    for (const [date, name] of Object.entries(FALLBACK_HOLIDAYS)) {
+      if (date.startsWith(String(year))) fallback[date] = name
     }
+    holidayCache[year] = fallback
+    return fallback
   }
-
-  return holidays
 }
 
-export function getAllHolidays(): Holiday[] {
-  return Object.entries(KOREAN_HOLIDAYS).map(([date, name]) => ({ date, name }))
+/**
+ * 특정 월의 공휴일 목록 반환 (holidayMap에서 필터링)
+ */
+export function getHolidaysInMonthFromMap(
+  holidayMap: Record<string, string>,
+  year: number,
+  month: number
+): Holiday[] {
+  const monthStr = `${year}-${String(month).padStart(2, '0')}`
+  return Object.entries(holidayMap)
+    .filter(([date]) => date.startsWith(monthStr))
+    .map(([date, name]) => ({ date, name }))
+}
+
+// 하위 호환 - 정적 데이터 기반 동기 함수 (스케줄러 폴백용)
+export function getHolidaysInMonth(year: number, month: number): Holiday[] {
+  const monthStr = `${year}-${String(month).padStart(2, '0')}`
+  return Object.entries(FALLBACK_HOLIDAYS)
+    .filter(([date]) => date.startsWith(monthStr))
+    .map(([date, name]) => ({ date, name }))
 }
